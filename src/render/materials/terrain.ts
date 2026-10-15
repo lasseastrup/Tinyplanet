@@ -57,7 +57,12 @@ void main() {
   float n2 = 0.0;
 #else
   vec3 N = normalize(vWorldNormal);
+#ifdef MOON
+  // Moons are small on screen: much lower detail frequency to avoid aliasing.
+  vec3 np = vLocalPos * 5.0;
+#else
   vec3 np = vLocalPos * 21.0;
+#endif
   float n1 = snoise(np);
   float n2 = snoise(np * 2.9 + 13.0);
   // Extra micro detail when the camera is close.
@@ -76,7 +81,7 @@ void main() {
 
 #ifdef MOON
   float mare = vData.z;
-  albedo = uMoonColor * 0.62 * mix(1.0, 0.45, mare) * (0.85 + 0.3 * (n2 * 0.5 + 0.5));
+  albedo = uMoonColor * 0.62 * mix(1.0, 0.45, mare) * (0.85 + 0.3 * (n1 * 0.5 + 0.5));
   albedo *= 1.0 + vData.w * 0.4;
 #else
   float h = vData.x;

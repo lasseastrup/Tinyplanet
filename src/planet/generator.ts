@@ -354,7 +354,7 @@ export function generateMoons(seed: number, count: number, lowPoly: boolean): Mo
 
 function generateMoon(seed: number, index: number, lowPoly: boolean): MoonResult {
   const rng = new Rng(mixSeed(seed, 0x300 + index * 7919));
-  const freq = lowPoly ? 6 : 22;
+  const freq = lowPoly ? 6 : 40;
   const topo = buildIcosphere(freq);
   const V = topo.vertexCount;
   const dirs = topo.directions;
@@ -386,7 +386,7 @@ function generateMoon(seed: number, index: number, lowPoly: boolean): MoonResult
     data[v * 4 + 2] = smoothstep(-0.1, 0.35, nMare.fbm(x * 1.2, y * 1.2, z * 1.2, 3)); // dark "maria"
     data[v * 4 + 3] = rock[v];
   }
-  const ao = cavityOcclusion(heights, buildNeighbors(V, topo.indices), freq * 2.5);
+  const ao = cavityOcclusion(heights, buildNeighbors(V, topo.indices), freq * 1.5);
   const mesh = lowPoly
     ? toFlatMesh(positions, data, ao, topo.indices)
     : { positions, normals: computeNormals(positions, topo.indices, V), data, ao, indices: topo.indices.slice() };

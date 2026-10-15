@@ -96,6 +96,8 @@ float moonShadow(vec3 p) {
   float s = 1.0;
   for (int i = 0; i < 4; i++) {
     if (i >= uMoonCount) break;
+    // Points on the moon itself must not be shadowed by its own bounding sphere.
+    if (distance(p, uMoons[i].xyz) < uMoons[i].w * 1.35) continue;
     s *= mix(0.08, 1.0, sphereShadow(p, uMoons[i].xyz, uMoons[i].w, 0.004));
   }
   return s;

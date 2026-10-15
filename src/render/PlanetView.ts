@@ -334,7 +334,8 @@ export class PlanetView {
     tu.uLavaColor.value.set(p.cShallow);
 
     this.moonMat.uniforms.uMoonColor.value.set(p.cMoon);
-    this.moonMat.uniforms.uDetailBump.value = 0.0012 * p.moonSize / 0.2;
+    // Moons are small on screen; derivative-based bump mapping only adds aliasing there.
+    this.moonMat.uniforms.uDetailBump.value = 0;
 
     // Ocean
     this.ocean.visible = hasOcean;

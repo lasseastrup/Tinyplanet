@@ -184,7 +184,7 @@ export const DEFAULT_PARAMS: PlanetParams = {
   cRing2: '#8c7a66',
 
   moons: 1,
-  moonSize: 0.2,
+  moonSize: 0.16,
   cMoon: '#b9b3aa',
 
   axialTilt: 18,
