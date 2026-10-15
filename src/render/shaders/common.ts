@@ -84,30 +84,31 @@ vec3 sunTransmittance(vec3 p) {
 }
 
 // Sun shadow map (terrain, props and puffy clouds), sampled with hardware PCF.
+// n is the geometric normal of the receiving surface.
 #if defined(SUN_SHADOWS) && SUN_SHADOWS > 0
 uniform sampler2DShadow uShadowMap;
 uniform mat4 uShadowMatrix;
 // x: one texel in uv, y: one texel in world units
 uniform vec2 uShadowTexel;
 float sunShadowMap(vec3 p, vec3 n) {
-  vec4 sc = uShadowMatrix * vec4(p + n * uShadowTexel.y * 1.5, 1.0);
+  float ndl = dot(n, uSunDir);
+  // Surfaces turned (almost) away from the sun get no direct light anyway, and there the depth
+  // comparisons are unreliable: they would sparkle as the planet turns. Fade the map out.
+  float use = smoothstep(0.0, 0.15, ndl);
+  if (use <= 0.0) return 1.0;
+  // Push the lookup off the surface, further at grazing angles.
+  float offset = uShadowTexel.y * (1.0 + 2.5 * (1.0 - ndl));
+  vec4 sc = uShadowMatrix * vec4(p + n * offset, 1.0);
   vec3 c = sc.xyz * 0.5 + 0.5;
   if (c.x <= 0.0 || c.x >= 1.0 || c.y <= 0.0 || c.y >= 1.0 || c.z >= 1.0) return 1.0;
-  float z = c.z - 0.0006;
+  float z = c.z - 0.0004;
   float o = uShadowTexel.x;
-#if SUN_SHADOWS > 1
+  // 4×4 bilinear comparisons: a soft edge that stays steady while the planet turns.
   float s = 0.0;
-  for (int i = -1; i <= 1; i++) {
-    for (int j = -1; j <= 1; j++) s += texture(uShadowMap, vec3(c.xy + vec2(float(i), float(j)) * o * 1.2, z));
+  for (int i = 0; i < 4; i++) {
+    for (int j = 0; j < 4; j++) s += texture(uShadowMap, vec3(c.xy + (vec2(float(i), float(j)) - 1.5) * o, z));
   }
-  return s / 9.0;
-#else
-  float s = texture(uShadowMap, vec3(c.xy + vec2(-o, -o) * 0.8, z));
-  s += texture(uShadowMap, vec3(c.xy + vec2(o, -o) * 0.8, z));
-  s += texture(uShadowMap, vec3(c.xy + vec2(-o, o) * 0.8, z));
-  s += texture(uShadowMap, vec3(c.xy + vec2(o, o) * 0.8, z));
-  return s * 0.25;
-#endif
+  return mix(1.0, s / 16.0, use);
 }
 #else
 float sunShadowMap(vec3 p, vec3 n) {

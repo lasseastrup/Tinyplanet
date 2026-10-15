@@ -12,7 +12,13 @@ export class SunShadow {
   /** World → shadow clip space. */
   readonly matrix = new THREE.Matrix4();
   private target: THREE.WebGLRenderTarget;
-  private readonly depthOnly = new THREE.MeshBasicMaterial({ colorWrite: false });
+  /** Depth-only caster material; the slope-scaled offset keeps surfaces from shadowing themselves. */
+  private readonly depthOnly = new THREE.MeshBasicMaterial({
+    colorWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: 1.5,
+    polygonOffsetUnits: 2,
+  });
   private size: number;
 
   constructor(size: number) {
@@ -22,7 +28,12 @@ export class SunShadow {
   }
 
   private static createTarget(size: number): THREE.WebGLRenderTarget {
-    const target = new THREE.WebGLRenderTarget(size, size, { generateMipmaps: false });
+    // Only the depth texture is used; keep the (required) colour buffer as small as possible.
+    const target = new THREE.WebGLRenderTarget(size, size, {
+      format: THREE.RedFormat,
+      type: THREE.UnsignedByteType,
+      generateMipmaps: false,
+    });
     const depth = new THREE.DepthTexture(size, size, THREE.UnsignedIntType);
     depth.format = THREE.DepthFormat;
     depth.compareFunction = THREE.LessEqualCompare;

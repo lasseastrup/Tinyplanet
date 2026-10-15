@@ -145,8 +145,6 @@ export class PlanetView {
   private readonly shadowMat: THREE.ShaderMaterial;
   private sunShadow: SunShadow | null = null;
   /** Frames since the shadow map was drawn, and the sun direction it was drawn for. */
-  private shadowAge = Infinity;
-  private readonly shadowSun = new THREE.Vector3();
 
   /** Prop models, meshes and contact shadows keyed by "kind:variant". */
   private readonly propGeos = new Map<string, THREE.BufferGeometry>();
@@ -258,7 +256,6 @@ export class PlanetView {
 
   /** Swap in a freshly generated terrain mesh. */
   setTerrain(result: TerrainResult, heightScale: number, lowPoly: boolean): void {
-    this.shadowAge = Infinity;
     const old = this.terrain.geometry;
     const g = meshToGeometry(result.mesh);
     this.terrain.geometry = g;
@@ -301,7 +298,6 @@ export class PlanetView {
 
   /** Show trees, rocks and villages (positions in planet-local space). */
   setProps(placement: PropPlacement): void {
-    this.shadowAge = Infinity;
     const sets = placement.sets;
     this.propSets = sets;
     // Village squares and fields are painted by the terrain shader.
@@ -410,7 +406,8 @@ export class PlanetView {
   }
 
   private configureShadows(quality: QualityDefines): void {
-    const size = quality.SUN_SHADOWS >= 2 ? 2048 : quality.SUN_SHADOWS >= 1 ? 1024 : 0;
+    // A 1024 map is too coarse for tiny trees: their shadows crawl in texel steps as the planet turns.
+    const size = quality.SUN_SHADOWS > 0 ? 2048 : 0;
     if (size === 0) {
       this.sunShadow?.dispose();
       this.sunShadow = null;
@@ -420,7 +417,6 @@ export class PlanetView {
       this.sunShadow = new SunShadow(size);
     }
     this.uniforms.uShadowMap.value = this.sunShadow ? this.sunShadow.texture : null;
-    this.shadowAge = Infinity;
     // With real shadows the contact discs only darken where props meet the ground.
     this.shadowMat.uniforms.uOffset.value = size ? 0 : 0.35;
     this.shadowMat.uniforms.uStrength.value = size ? 0.4 : 0.75;
@@ -428,19 +424,14 @@ export class PlanetView {
 
   /**
    * Render the sun's shadow map; call once per frame after update() and before the main render.
-   * The planet turns slowly, so the smaller (mobile) map is only refreshed every other frame
-   * unless the sun, terrain or props changed.
+   * It must be redrawn every frame: the planet turns under a fixed sun, so a stale map shows
+   * shadows that lag behind their casters.
    */
   renderShadows(renderer: THREE.WebGLRenderer, scene: THREE.Scene): void {
     const sh = this.sunShadow;
     const p = this.params;
     if (!sh || !p) return;
     const u = this.uniforms;
-    const interval = sh.mapSize >= 2048 ? 1 : 2;
-    this.shadowAge++;
-    if (this.shadowAge < interval && this.shadowSun.equals(u.uSunDir.value)) return;
-    this.shadowAge = 0;
-    this.shadowSun.copy(u.uSunDir.value);
     // Tightest sphere around every caster: terrain peaks, the tallest props and the puffy clouds.
     const peak = 1 + Math.max(this.terrainInfo?.maxHeight ?? 1, p.seaLevel) * this.meshHeightScale;
     let radius = peak + (p.trees + p.rocks + p.houses > 0.001 ? propScale(p.size) * 1.9 : 0);
