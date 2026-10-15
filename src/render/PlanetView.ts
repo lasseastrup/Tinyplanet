@@ -4,12 +4,15 @@ import { buildBiomeLut, biomeLutKey, LUT_SIZE } from '../planet/biomes';
 import type { MeshData, MoonResult, TerrainResult } from '../planet/generator';
 import { buildIcosphere } from '../planet/icosphere';
 import type { PlanetParams } from '../planet/params';
+import { placePuffs, PROP_KINDS, type PropKind, type PropSet } from '../planet/props';
 import { buildRingProfile, RING_TEX_SIZE } from '../planet/rings';
 import { createAuroraGeometry, createAuroraMaterial } from './materials/aurora';
 import { createCloudMaterial } from './materials/clouds';
 import { createOceanMaterial } from './materials/ocean';
+import { createPropMaterial, createPropShadowMaterial } from './materials/props';
 import { createRingGeometry, createRingMaterial } from './materials/rings';
 import { createTerrainMaterial } from './materials/terrain';
+import { cloudPuffGeometry, propGeometry, propMatrix, shadowGeometry } from './propGeometry';
 import type { QualityDefines } from './quality';
 
 const DEG = Math.PI / 180;
@@ -128,6 +131,19 @@ export class PlanetView {
   private readonly ringBackMat: THREE.ShaderMaterial;
   private readonly ringFrontMat: THREE.ShaderMaterial;
   private readonly auroraMat: THREE.ShaderMaterial;
+  private readonly propMat: THREE.ShaderMaterial;
+  private readonly puffMat: THREE.ShaderMaterial;
+  private readonly shadowMat: THREE.ShaderMaterial;
+
+  private readonly propGeos = new Map<PropKind, THREE.BufferGeometry>();
+  private readonly propMeshes = new Map<PropKind, THREE.InstancedMesh>();
+  private readonly shadowGeos = new Map<PropKind, THREE.BufferGeometry>();
+  private readonly shadowMeshes = new Map<PropKind, THREE.InstancedMesh>();
+  private readonly puffGeo: THREE.BufferGeometry;
+  private puffs: THREE.InstancedMesh | null = null;
+  private puffKey = '';
+  /** Latest prop placement (kept for export). */
+  propSets: PropSet[] = [];
 
   private readonly biomeTex: THREE.DataTexture;
   private readonly ringTex: THREE.DataTexture;
@@ -175,6 +191,14 @@ export class PlanetView {
     this.ringBackMat = createRingMaterial(u, quality, false);
     this.ringFrontMat = createRingMaterial(u, quality, true);
     this.auroraMat = createAuroraMaterial(u);
+    this.propMat = createPropMaterial(u, quality, { puff: false });
+    this.puffMat = createPropMaterial(u, quality, { puff: true });
+    this.shadowMat = createPropShadowMaterial(u);
+    for (const kind of PROP_KINDS) {
+      this.propGeos.set(kind, propGeometry(kind));
+      this.shadowGeos.set(kind, shadowGeometry(kind));
+    }
+    this.puffGeo = cloudPuffGeometry();
 
     const placeholder = new THREE.BufferGeometry();
     this.terrain = new THREE.Mesh(placeholder, this.terrainMat);
@@ -256,8 +280,78 @@ export class PlanetView {
     this.clouds.geometry = flat ? this.cloudGeoLowPoly : this.cloudGeo;
   }
 
+  /** Show trees, rocks and houses (positions in planet-local space). */
+  setProps(sets: PropSet[]): void {
+    this.propSets = sets;
+    for (const set of sets) {
+      let mesh = this.propMeshes.get(set.kind);
+      if (!mesh || mesh.instanceMatrix.count < set.count) {
+        if (mesh) {
+          this.spin.remove(mesh);
+          mesh.dispose();
+        }
+        const capacity = Math.max(64, Math.ceil(set.count * 1.25));
+        mesh = new THREE.InstancedMesh(this.propGeos.get(set.kind)!, this.propMat, capacity);
+        mesh.name = `Props_${set.kind}`;
+        this.propMeshes.set(set.kind, mesh);
+        this.spin.add(mesh);
+      }
+      writeInstances(mesh, set);
+
+      // Contact shadows share the props' instance matrices.
+      let shadow = this.shadowMeshes.get(set.kind);
+      if (!shadow || shadow.instanceMatrix !== mesh.instanceMatrix) {
+        if (shadow) {
+          this.spin.remove(shadow);
+          shadow.dispose();
+        }
+        shadow = new THREE.InstancedMesh(this.shadowGeos.get(set.kind)!, this.shadowMat, 1);
+        shadow.instanceMatrix = mesh.instanceMatrix;
+        shadow.name = `PropShadows_${set.kind}`;
+        shadow.frustumCulled = false;
+        this.shadowMeshes.set(set.kind, shadow);
+        this.spin.add(shadow);
+      }
+      shadow.count = mesh.count;
+      shadow.visible = mesh.visible;
+    }
+  }
+
+  get propMeshList(): THREE.InstancedMesh[] {
+    return [...this.propMeshes.values()].filter((m) => m.count > 0 && m.visible);
+  }
+
+  get puffMesh(): THREE.InstancedMesh | null {
+    return this.puffs && this.puffs.visible && this.puffs.count > 0 ? this.puffs : null;
+  }
+
+  private updatePuffs(p: PlanetParams, cloudRadius: number): void {
+    const show = p.cloudStyle === 'puffs' && p.cloudCoverage > 0.001 && p.cloudOpacity > 0.001;
+    if (!show) {
+      if (this.puffs) this.puffs.visible = false;
+      return;
+    }
+    const key = `${p.seed}|${p.size}|${p.cloudCoverage}|${p.cloudScale}|${cloudRadius.toFixed(4)}`;
+    if (key !== this.puffKey || !this.puffs) {
+      this.puffKey = key;
+      const set = placePuffs(p, cloudRadius);
+      if (!this.puffs || this.puffs.instanceMatrix.count < set.count) {
+        if (this.puffs) {
+          this.cloudPivot.remove(this.puffs);
+          this.puffs.dispose();
+        }
+        this.puffs = new THREE.InstancedMesh(this.puffGeo, this.puffMat, Math.max(64, set.count));
+        this.puffs.name = 'CloudPuffs';
+        this.cloudPivot.add(this.puffs);
+      }
+      writeInstances(this.puffs, set);
+    }
+    this.puffs.visible = true;
+    (this.puffMat.uniforms.uPuffColor.value as THREE.Color).set(p.cCloud);
+  }
+
   setQuality(quality: QualityDefines): void {
-    for (const m of [this.terrainMat, this.oceanMat, this.moonMat, this.cloudMat, this.cirrusMat, this.ringBackMat, this.ringFrontMat]) {
+    for (const m of [this.terrainMat, this.oceanMat, this.moonMat, this.cloudMat, this.cirrusMat, this.ringBackMat, this.ringFrontMat, this.propMat, this.puffMat]) {
       Object.assign(m.defines, quality);
       m.needsUpdate = true;
     }
@@ -327,7 +421,8 @@ export class PlanetView {
     tu.uRockColor.value.set(p.cRock);
     tu.uSandColor.value.set(p.cSand);
     (tu.uSeabedColor.value as THREE.Color).set(p.cSand).multiplyScalar(0.35).lerp(new THREE.Color(p.cDeep), 0.45);
-    tu.uDetailBump.value = 0.0028 * Math.max(0.3, this.meshHeightScale / 0.06);
+    tu.uDetailBump.value = 0.0028 * Math.max(0.3, this.meshHeightScale / 0.06) * (0.3 + 0.7 * p.size);
+    tu.uDetailFreq.value = 12 + 9 * p.size;
     tu.uCityLights.value = p.cityLights;
     tu.uCityColor.value.set(p.cCity);
     tu.uLava.value = lava ? 1 : 0;
@@ -364,8 +459,11 @@ export class PlanetView {
     this.cirrusMat.uniforms.uCloudColor.value.set(p.cCloud);
     this.cirrusMat.uniforms.uCirrus.value = p.cirrus;
     this.cirrusMat.uniforms.uLayerOpacity.value = 0.5;
-    this.clouds.visible = p.cloudCoverage > 0.001 && p.cloudOpacity > 0.001;
-    this.cirrus.visible = p.cirrus > 0.001 && p.cloudOpacity > 0.001 && !this.flat;
+    const layer = p.cloudStyle === 'layer';
+    this.clouds.visible = layer && p.cloudCoverage > 0.001 && p.cloudOpacity > 0.001;
+    this.cirrus.visible = layer && p.cirrus > 0.001 && p.cloudOpacity > 0.001 && !this.flat;
+    if (!layer) u.uCloudShadow.value = 0;
+    this.updatePuffs(p, cloudR);
     if (this.stormSeed !== p.seed) {
       this.stormSeed = p.seed;
       const rng = new Rng(mixSeed(p.seed, 0x5707));
@@ -474,12 +572,35 @@ export class PlanetView {
     this.ringBack.geometry.dispose();
     this.aurora.geometry.dispose();
     for (const m of this.moons) m.mesh.geometry.dispose();
-    for (const mat of [this.terrainMat, this.oceanMat, this.moonMat, this.cloudMat, this.cirrusMat, this.ringBackMat, this.ringFrontMat, this.auroraMat]) {
+    for (const mat of [this.terrainMat, this.oceanMat, this.moonMat, this.cloudMat, this.cirrusMat, this.ringBackMat, this.ringFrontMat, this.auroraMat, this.propMat, this.puffMat]) {
       mat.dispose();
     }
+    for (const g of this.propGeos.values()) g.dispose();
+    for (const g of this.shadowGeos.values()) g.dispose();
+    for (const m of this.propMeshes.values()) m.dispose();
+    for (const m of this.shadowMeshes.values()) m.dispose();
+    this.shadowMat.dispose();
+    this.puffGeo.dispose();
+    this.puffs?.dispose();
     this.biomeTex.dispose();
     this.ringTex.dispose();
   }
+}
+
+const tmpM = new THREE.Matrix4();
+const tmpC = new THREE.Color();
+
+/** Fill an InstancedMesh from a prop set. */
+function writeInstances(mesh: THREE.InstancedMesh, set: PropSet): void {
+  for (let i = 0; i < set.count; i++) {
+    mesh.setMatrixAt(i, propMatrix(set, i, tmpM));
+    mesh.setColorAt(i, tmpC.setRGB(set.colors[i * 3], set.colors[i * 3 + 1], set.colors[i * 3 + 2]));
+  }
+  mesh.count = set.count;
+  mesh.visible = set.count > 0;
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  mesh.computeBoundingSphere();
 }
 
 function setDefine(mat: THREE.ShaderMaterial, name: string, on: boolean): void {

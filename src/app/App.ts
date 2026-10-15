@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GeneratorClient } from '../planet/GeneratorClient';
 import type { MoonResult, TerrainResult } from '../planet/generator';
+import { placeProps } from '../planet/props';
 import {
+  effectiveHeightScale,
+  PROP_KEYS,
   sanitizeParams,
   shapeParamsOf,
   SHAPE_KEYS,
@@ -42,6 +45,7 @@ export class App {
   private readonly timer = new THREE.Timer();
   private time = 0;
   private fullTimer: number | undefined;
+  private propTimer: number | undefined;
   private fullPending = false;
   private frameTimes: number[] = [];
   private lastAdapt = 0;
@@ -88,7 +92,7 @@ export class App {
     this.controls.enablePan = false;
     this.controls.rotateSpeed = 0.55;
     this.controls.zoomSpeed = 0.9;
-    this.controls.minDistance = 1.7;
+    this.controls.minDistance = 1.35;
     this.controls.maxDistance = 30;
     this.controls.addEventListener('start', () => {
       this.dolly = null;
@@ -104,7 +108,8 @@ export class App {
 
     this.generator.onResult((res, req) => {
       if (res.terrain) {
-        this.planet.setTerrain(res.terrain, req.shape.heightScale, req.shape.lowPoly);
+        this.planet.setTerrain(res.terrain, effectiveHeightScale(req.shape), req.shape.lowPoly);
+        this.updateProps();
         if (!this.hasTerrain) this.startDolly(2.4, (t) => 1.9 - 0.9 * (1 - Math.pow(1 - t, 3)));
         this.hasTerrain = true;
         this.events.generated?.(res.terrain);
@@ -152,6 +157,7 @@ export class App {
     this.time += dt;
     this.planet.update(this.time, dt);
     this.controls.update();
+    this.applyCloseUp();
     this.post.render(this.scene, this.camera, dt);
   }
 
@@ -175,6 +181,7 @@ export class App {
     this.updateDetailBoost();
     this.planet.update(this.time, dt);
     this.controls.update();
+    this.applyCloseUp();
     this.post.render(this.scene, this.camera, dt);
     this.adaptResolution(dt);
   }
@@ -202,6 +209,14 @@ export class App {
   }
 
   /** More cloud/terrain octaves when the camera is close (continuous, so detail fades in). */
+  /** Near the surface, tilt the view up towards the horizon and slow the orbit down. */
+  private applyCloseUp(): void {
+    const dist = this.camera.position.distanceTo(this.controls.target);
+    const t = 1 - THREE.MathUtils.smoothstep(dist, this.controls.minDistance, 2.4);
+    this.controls.rotateSpeed = 0.55 * (1 - 0.6 * t);
+    if (t > 0) this.camera.rotateX(t * 0.72);
+  }
+
   private updateDetailBoost(): void {
     const dist = this.camera.position.distanceTo(this.controls.target);
     const boost = this.quality.level === 'low' ? 0 : THREE.MathUtils.clamp((3.9 - dist) / 0.9, 0, 2);
@@ -260,6 +275,8 @@ export class App {
     if (changed.includes('seed')) this.space.build(this.renderer, this.scene, next.seed);
     if (changed.includes('rings') || changed.includes('ringOuter')) {
       if ((prev.rings > 0) !== (next.rings > 0) || changed.includes('ringOuter')) this.frameCamera(false);
+    } else if (changed.includes('size')) {
+      this.frameCamera(false);
     }
 
     if (this.hasTerrain && (changed.includes('seed') || changed.includes('preset'))) {
@@ -268,6 +285,8 @@ export class App {
     if (shape) this.regenerate({ terrain: true, moons }, true);
     else if (moons) this.regenerate({ terrain: false, moons: true }, false);
     else if (soft) this.scheduleFull({ terrain: true, moons: false }, 350);
+    // Props follow the climate/palette; new terrain re-places them anyway.
+    if (!shape && changed.some((k) => PROP_KEYS.has(k))) this.scheduleProps(120);
 
     this.events.change?.(next, changed);
   }
@@ -299,6 +318,33 @@ export class App {
       this.fullPending = false;
       this.generator.request(shapeParamsOf(this.params, this.quality.maxFrequency), what, false);
     }, delay);
+  }
+
+  private scheduleProps(delay: number): void {
+    window.clearTimeout(this.propTimer);
+    this.propTimer = window.setTimeout(() => this.updateProps(), delay);
+  }
+
+  /** (Re)place trees, rocks and houses on the current terrain mesh. */
+  private updateProps(): void {
+    window.clearTimeout(this.propTimer);
+    const g = this.planet.terrain.geometry;
+    const pos = g.getAttribute('position') as THREE.BufferAttribute | undefined;
+    const nor = g.getAttribute('normal') as THREE.BufferAttribute | undefined;
+    const dat = g.getAttribute('aData') as THREE.BufferAttribute | undefined;
+    if (!pos || !nor || !dat) return;
+    const index = g.getIndex();
+    const sets = placeProps(
+      {
+        positions: pos.array as Float32Array,
+        normals: nor.array as Float32Array,
+        data: dat.array as Float32Array,
+        indices: index ? (index.array as Uint32Array) : null,
+      },
+      this.params,
+      this.quality.maxProps,
+    );
+    this.planet.setProps(sets);
   }
 
   setQuality(level: QualityLevel): void {
@@ -348,7 +394,8 @@ export class App {
     // Visible region (excluding UI insets), relative to the full viewport height.
     const visH = Math.max(0.25, (this.viewH - Math.min(this.insets.bottom, this.viewH * 0.7)) / this.viewH);
     const visW = Math.max(0.25, (this.viewW - Math.min(this.insets.right, this.viewW * 0.6)) / this.viewH);
-    const fit = Math.max(radius / (tanHalf * visH * 0.72), radius / (tanHalf * visW * 0.84));
+    const fill = 1 + 0.18 * (1 - p.size); // tiny worlds are shown a bit closer
+    const fit = Math.max(radius / (tanHalf * visH * Math.min(0.72 * fill, 0.86)), radius / (tanHalf * visW * Math.min(0.84 * fill, 0.95)));
     const offset = this.camera.position.clone().sub(this.controls.target);
     const current = offset.length();
     const next = reset || !Number.isFinite(current) || current === 0 ? fit : (current * fit) / this.fitDistance;

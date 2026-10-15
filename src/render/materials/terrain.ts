@@ -34,6 +34,7 @@ uniform vec3 uRockColor;
 uniform vec3 uSandColor;
 uniform vec3 uSeabedColor;
 uniform float uDetailBump;
+uniform float uDetailFreq;
 uniform float uCityLights;
 uniform vec3 uCityColor;
 uniform float uLava;
@@ -61,7 +62,7 @@ void main() {
   // Moons are small on screen: much lower detail frequency to avoid aliasing.
   vec3 np = vLocalPos * 5.0;
 #else
-  vec3 np = vLocalPos * 21.0;
+  vec3 np = vLocalPos * uDetailFreq;
 #endif
   float n1 = snoise(np);
   float n2 = snoise(np * 2.9 + 13.0);
@@ -195,6 +196,7 @@ export function createTerrainMaterial(
     uSandColor: { value: new THREE.Color() },
     uSeabedColor: { value: new THREE.Color() },
     uDetailBump: { value: 0.0025 },
+    uDetailFreq: { value: 21 },
     uCityLights: { value: 0 },
     uCityColor: { value: new THREE.Color() },
     uLava: { value: 0 },

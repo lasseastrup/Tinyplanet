@@ -4,16 +4,25 @@ import { hexToLinear } from '../core/math';
 import { colorContext, terrainAlbedo, waterColor } from '../planet/colors';
 import type { MeshData } from '../planet/generator';
 import type { PlanetParams } from '../planet/params';
+import { placeProps, placePuffs, type PropKind, type PropSet } from '../planet/props';
 import { buildRingProfile, RING_TEX_SIZE } from '../planet/rings';
+import { cloudPuffGeometry, geometryPart, PART, PROP_COLORS, propGeometry, propMatrix } from '../render/propGeometry';
 import type { PlanetView } from '../render/PlanetView';
 import { slug } from './deliver';
 
 /**
  * Build a plain, engine-friendly scene (standard PBR materials + vertex colours) from the
- * current planet and export it as binary glTF. Clouds, atmosphere and other shader effects
- * are not part of the export; the full parameter set is stored in the root node's extras.
+ * current planet and export it as binary glTF. Trees, houses and puffy clouds are instanced
+ * meshes (EXT_mesh_gpu_instancing). Layer clouds, atmosphere and other shader effects are not
+ * part of the export; the full parameter set is stored in the root node's extras.
  */
-export async function exportPlanetGLB(view: PlanetView, params: PlanetParams, mesh: MeshData, heightScale: number): Promise<Blob> {
+export async function exportPlanetGLB(
+  view: PlanetView,
+  params: PlanetParams,
+  mesh: MeshData,
+  heightScale: number,
+  propBudget: number,
+): Promise<Blob> {
   const root = new THREE.Group();
   root.name = slug(params.name) || 'tiny-planet';
   root.userData = { generator: 'Tiny Planet', params };
@@ -127,6 +136,18 @@ export async function exportPlanetGLB(view: PlanetView, params: PlanetParams, me
     }
   }
 
+  // --- Props and puffy clouds ------------------------------------------------------------------
+  const props = buildProps(params, mesh, propBudget);
+  if (props.children.length > 0) tilt.add(props);
+  if (params.cloudStyle === 'puffs' && params.cloudCoverage > 0.001 && params.cloudOpacity > 0.001) {
+    const puffs = placePuffs(params, 1 + params.seaLevel * heightScale + params.cloudAltitude);
+    const geo = geometryPart(cloudPuffGeometry(), PART.cloud);
+    if (geo && puffs.count > 0) {
+      const mat = new THREE.MeshStandardMaterial({ name: 'Clouds', color: new THREE.Color(params.cCloud), roughness: 1 });
+      tilt.add(instanced(geo, mat, puffs, range(puffs.count), 'Clouds'));
+    }
+  }
+
   // --- Rings ---------------------------------------------------------------------------------
   if (params.rings > 0.001) {
     tilt.add(buildRingMesh(params));
@@ -161,6 +182,13 @@ export async function exportPlanetGLB(view: PlanetView, params: PlanetParams, me
   });
 
   const exporter = new GLTFExporter();
+  // Props are optional detail: engines without EXT_mesh_gpu_instancing still load the planet
+  // (they draw one copy of each prop at the origin, hidden inside the planet).
+  exporter.register((writer) => ({
+    afterParse() {
+      delete writer.extensionsRequired.EXT_mesh_gpu_instancing;
+    },
+  }));
   const result = await exporter.parseAsync(root, { binary: true });
   disposeTree(root);
   return new Blob([result as ArrayBuffer], { type: 'model/gltf-binary' });
@@ -221,6 +249,120 @@ function buildRingMesh(params: PlanetParams): THREE.Mesh {
   const mesh = new THREE.Mesh(geo, mat);
   mesh.name = 'Rings';
   return mesh;
+}
+
+const KIND_NAMES: Record<PropKind, string> = {
+  conifer: 'Conifers',
+  broadleaf: 'Trees',
+  jungle: 'JungleTrees',
+  cactus: 'Cacti',
+  rock: 'Rocks',
+  house: 'Houses',
+  tower: 'Chapels',
+};
+const TINT_NAMES: Record<PropKind, string> = {
+  conifer: 'Needles',
+  broadleaf: 'Leaves',
+  jungle: 'Leaves',
+  cactus: 'Cactus',
+  rock: 'Stone',
+  house: 'Roof',
+  tower: 'Roof',
+};
+
+/** Trees, rocks and villages as instanced meshes: one per model part, tints in a few colour groups. */
+function buildProps(params: PlanetParams, mesh: MeshData, budget: number): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'Props';
+  const surface = { positions: mesh.positions, normals: mesh.normals, data: mesh.data, indices: mesh.indices };
+  const plain: Record<number, [string, THREE.MeshStandardMaterial]> = {
+    [PART.wood]: ['Wood', new THREE.MeshStandardMaterial({ name: 'Wood', color: PROP_COLORS.wood, roughness: 0.9 })],
+    [PART.wall]: ['Walls', new THREE.MeshStandardMaterial({ name: 'Walls', color: PROP_COLORS.wall, roughness: 0.85 })],
+    [PART.window]: [
+      'Windows',
+      new THREE.MeshStandardMaterial({
+        name: 'Windows',
+        color: PROP_COLORS.window,
+        // A soft glow baked into the colour (no emissive-strength extension needed).
+        emissive: new THREE.Color(PROP_COLORS.windowGlow).multiplyScalar(0.35),
+        roughness: 0.4,
+      }),
+    ],
+  };
+  for (const set of placeProps(surface, params, budget)) {
+    if (set.count === 0) continue;
+    const kindGroup = new THREE.Group();
+    kindGroup.name = KIND_NAMES[set.kind];
+    const model = propGeometry(set.kind);
+    for (const part of [PART.wood, PART.tint, PART.wall, PART.window]) {
+      const geo = geometryPart(model, part);
+      if (!geo) continue;
+      if (part === PART.tint) {
+        colorGroups(set, 6).forEach((g, i) => {
+          const name = `${kindGroup.name}_${TINT_NAMES[set.kind]}${i + 1}`;
+          const mat = new THREE.MeshStandardMaterial({
+            name,
+            color: new THREE.Color().setRGB(g.color[0], g.color[1], g.color[2]),
+            roughness: set.kind === 'rock' ? 0.95 : 0.85,
+          });
+          kindGroup.add(instanced(geo, mat, set, g.indices, name));
+        });
+      } else {
+        const [label, mat] = plain[part];
+        kindGroup.add(instanced(geo, mat, set, range(set.count), `${kindGroup.name}_${label}`));
+      }
+    }
+    model.dispose();
+    group.add(kindGroup);
+  }
+  return group;
+}
+
+function instanced(geo: THREE.BufferGeometry, mat: THREE.Material, set: PropSet, indices: number[], name: string): THREE.InstancedMesh {
+  const m = new THREE.InstancedMesh(geo, mat, indices.length);
+  const tmp = new THREE.Matrix4();
+  indices.forEach((i, k) => m.setMatrixAt(k, propMatrix(set, i, tmp)));
+  m.name = name;
+  return m;
+}
+
+/** Median-cut the per-instance tints into at most `max` groups with their mean colour. */
+function colorGroups(set: PropSet, max: number): Array<{ indices: number[]; color: [number, number, number] }> {
+  const c = set.colors;
+  const groups: number[][] = [range(set.count)];
+  while (groups.length < max) {
+    let best = -1;
+    let bestChannel = 0;
+    let bestRange = 0.004;
+    groups.forEach((g, gi) => {
+      if (g.length < 2) return;
+      for (let ch = 0; ch < 3; ch++) {
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (const i of g) {
+          lo = Math.min(lo, c[i * 3 + ch]);
+          hi = Math.max(hi, c[i * 3 + ch]);
+        }
+        if (hi - lo > bestRange) {
+          bestRange = hi - lo;
+          best = gi;
+          bestChannel = ch;
+        }
+      }
+    });
+    if (best < 0) break;
+    const g = groups[best].sort((i, j) => c[i * 3 + bestChannel] - c[j * 3 + bestChannel]);
+    groups.splice(best, 1, g.slice(0, g.length >> 1), g.slice(g.length >> 1));
+  }
+  return groups.map((g) => {
+    const mean: [number, number, number] = [0, 0, 0];
+    for (const i of g) for (let ch = 0; ch < 3; ch++) mean[ch] += c[i * 3 + ch] / g.length;
+    return { indices: g, color: mean };
+  });
+}
+
+function range(n: number): number[] {
+  return Array.from({ length: n }, (_, i) => i);
 }
 
 function toByte(v: number): number {

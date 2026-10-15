@@ -16,6 +16,8 @@ export interface QualitySettings {
   atmoSteps: number;
   atmoLightSteps: number;
   maxFrequency: number;
+  /** Instance budget for trees, rocks and houses. */
+  maxProps: number;
   defines: QualityDefines;
 }
 
@@ -29,6 +31,7 @@ export function qualitySettings(level: QualityLevel): QualitySettings {
         atmoSteps: 8,
         atmoLightSteps: 3,
         maxFrequency: 80,
+        maxProps: 1500,
         defines: { SUN_STEPS: 3, CLOUD_OCTAVES: 3, SHADOW_OCTAVES: 2, CLOUD_SHADOWS: 0 },
       };
     case 'medium':
@@ -39,6 +42,7 @@ export function qualitySettings(level: QualityLevel): QualitySettings {
         atmoSteps: 12,
         atmoLightSteps: 4,
         maxFrequency: 120,
+        maxProps: 3500,
         defines: { SUN_STEPS: 4, CLOUD_OCTAVES: 4, SHADOW_OCTAVES: 3, CLOUD_SHADOWS: 1 },
       };
     default:
@@ -49,6 +53,7 @@ export function qualitySettings(level: QualityLevel): QualitySettings {
         atmoSteps: 16,
         atmoLightSteps: 6,
         maxFrequency: 192,
+        maxProps: 6000,
         defines: { SUN_STEPS: 6, CLOUD_OCTAVES: 5, SHADOW_OCTAVES: 3, CLOUD_SHADOWS: 1 },
       };
   }

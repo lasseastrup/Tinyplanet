@@ -16,6 +16,7 @@ export const ICONS = {
   close: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
   eye: svg('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
   mountain: svg('<path d="M3 19l6.5-11 4 6.5 2.5-3.5 5 8z"/>'),
+  tree: svg('<path d="M12 2.8l5.2 7.4h-2.9l4.2 6.3H5.5l4.2-6.3H6.8z"/><path d="M12 16.5v4.7"/>'),
   thermo: svg('<path d="M10 13.5V5a2 2 0 1 1 4 0v8.5a4 4 0 1 1-4 0z"/><path d="M12 9v6"/>'),
   drop: svg('<path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/>'),
   cloud: svg('<path d="M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6.1 9.5 4.25 4.25 0 0 0 7 18z"/>'),

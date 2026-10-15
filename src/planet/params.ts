@@ -3,6 +3,7 @@
  * reuse from game code. Colours are sRGB hex strings.
  */
 export type Liquid = 'water' | 'lava' | 'none';
+export type CloudStyle = 'layer' | 'puffs';
 
 export interface PlanetParams {
   // identity
@@ -11,6 +12,8 @@ export interface PlanetParams {
   preset: string;
 
   // shape — changing these regenerates the mesh (in a worker)
+  /** 0 = tiny diorama world (huge features, 3D props are big), 1 = large planet. */
+  size: number;
   lowPoly: boolean;
   detail: number;
   heightScale: number;
@@ -66,6 +69,13 @@ export interface PlanetParams {
   cloudShadows: number;
   cirrus: number;
   cCloud: string;
+  cloudStyle: CloudStyle;
+
+  // life: instanced 3D props on the surface
+  trees: number;
+  rocks: number;
+  houses: number;
+  cRoof: string;
 
   // night side & extras
   cityLights: number;
@@ -100,6 +110,7 @@ export type ParamKey = keyof PlanetParams;
 /** Keys that require the terrain mesh to be regenerated. */
 export const SHAPE_KEYS: ReadonlySet<ParamKey> = new Set<ParamKey>([
   'seed',
+  'size',
   'lowPoly',
   'detail',
   'heightScale',
@@ -116,11 +127,33 @@ export const SHAPE_KEYS: ReadonlySet<ParamKey> = new Set<ParamKey>([
 /** Keys that are applied instantly but refine the generated climate shortly after (debounced). */
 export const SOFT_REGEN_KEYS: ReadonlySet<ParamKey> = new Set<ParamKey>(['seaLevel', 'liquid']);
 
+/** Keys that change where/how surface props (trees, rocks, houses) are placed or coloured. */
+export const PROP_KEYS: ReadonlySet<ParamKey> = new Set<ParamKey>([
+  'trees',
+  'rocks',
+  'houses',
+  'cRoof',
+  'seaLevel',
+  'liquid',
+  'temperature',
+  'humidity',
+  'snowLine',
+  'cForest',
+  'cTaiga',
+  'cJungle',
+  'cGrass',
+  'cSavanna',
+  'cDesert',
+  'cRock',
+  'cSnow',
+]);
+
 export const DEFAULT_PARAMS: PlanetParams = {
   name: 'Terra Nova',
   seed: 1337,
   preset: 'terra',
 
+  size: 1,
   lowPoly: false,
   detail: 0.55,
   heightScale: 0.042,
@@ -171,6 +204,12 @@ export const DEFAULT_PARAMS: PlanetParams = {
   cloudShadows: 0.35,
   cirrus: 0.2,
   cCloud: '#ffffff',
+  cloudStyle: 'layer',
+
+  trees: 0,
+  rocks: 0,
+  houses: 0,
+  cRoof: '#c8573c',
 
   cityLights: 0.5,
   cCity: '#ffb04f',
@@ -201,6 +240,7 @@ type NumericKeys = { [K in ParamKey]: PlanetParams[K] extends number ? K : never
 /** Valid ranges for numeric parameters (used for sanitising and by the UI). */
 export const RANGES: Record<NumericKeys, [number, number]> = {
   seed: [0, 4294967295],
+  size: [0, 1],
   detail: [0, 1],
   heightScale: [0, 0.2],
   continentScale: [0.3, 3],
@@ -229,6 +269,9 @@ export const RANGES: Record<NumericKeys, [number, number]> = {
   cloudAltitude: [0.02, 0.2],
   cloudShadows: [0, 1],
   cirrus: [0, 1],
+  trees: [0, 1],
+  rocks: [0, 1],
+  houses: [0, 1],
   cityLights: [0, 1],
   aurora: [0, 1],
   rings: [0, 1],
@@ -266,6 +309,8 @@ export function sanitizeParams(raw: object, base: PlanetParams = DEFAULT_PARAMS)
         if (HEX.test(value)) target[key] = value.toLowerCase();
       } else if (key === 'liquid') {
         if (value === 'water' || value === 'lava' || value === 'none') target[key] = value;
+      } else if (key === 'cloudStyle') {
+        if (value === 'layer' || value === 'puffs') target[key] = value;
       } else {
         target[key] = value.slice(0, 40);
       }
@@ -280,6 +325,7 @@ export function sanitizeParams(raw: object, base: PlanetParams = DEFAULT_PARAMS)
 /** Parameters the terrain generator needs. */
 export interface ShapeParams {
   seed: number;
+  size: number;
   lowPoly: boolean;
   detail: number;
   heightScale: number;
@@ -300,6 +346,7 @@ export interface ShapeParams {
 export function shapeParamsOf(p: PlanetParams, maxFrequency: number): ShapeParams {
   return {
     seed: p.seed,
+    size: p.size,
     lowPoly: p.lowPoly,
     detail: p.detail,
     heightScale: p.heightScale,
@@ -315,6 +362,21 @@ export function shapeParamsOf(p: PlanetParams, maxFrequency: number): ShapeParam
     moons: p.moons,
     maxFrequency,
   };
+}
+
+/** Feature-frequency multiplier: tiny worlds have fewer, bigger continents, hills and craters. */
+export function sizeFrequencyFactor(size: number): number {
+  return 0.42 + 0.58 * size;
+}
+
+/** Relief actually applied to the mesh (tiny worlds are chunkier). */
+export function effectiveHeightScale(s: Pick<ShapeParams, 'heightScale' | 'size'>): number {
+  return s.heightScale * (1.6 - 0.6 * s.size);
+}
+
+/** Height of a typical tree, in planet radii (props are big on tiny worlds). */
+export function propScale(size: number): number {
+  return 0.058 - 0.042 * size;
 }
 
 /** Icosphere frequency used for the terrain mesh. */

@@ -7,7 +7,7 @@ import { Simplex3 } from '../core/noise';
 import { Rng, mixSeed } from '../core/rng';
 import { cavityOcclusion } from './ao';
 import { buildIcosphere, buildNeighbors } from './icosphere';
-import { terrainFrequency, type ShapeParams } from './params';
+import { effectiveHeightScale, sizeFrequencyFactor, terrainFrequency, type ShapeParams } from './params';
 
 export interface MeshData {
   positions: Float32Array;
@@ -66,10 +66,14 @@ export function generateTerrain(s: ShapeParams, preview = false, frequencyOverri
   const heights = new Float32Array(V);
   const rock = new Float32Array(V);
 
-  const cf = s.continentScale;
+  // Tiny worlds: every feature frequency scales down, so continents and hills are huge.
+  const sf = sizeFrequencyFactor(s.size);
+  const cf = s.continentScale * sf;
   const warpAmt = s.warp * 0.45;
-  const wf = 1.1 + cf * 0.6;
-  const mf = s.mountainScale * 1.4;
+  const wf = (1.1 + s.continentScale * 0.6) * sf;
+  const mf = s.mountainScale * 1.4 * sf;
+  const maskF = 1.3 * sf;
+  const hillF = 7 * sf;
   const hillAmt = 0.24 * s.roughness;
 
   for (let v = 0; v < V; v++) {
@@ -96,7 +100,7 @@ export function generateTerrain(s: ShapeParams, preview = false, frequencyOverri
     const inland = smoothstep(-0.04, 0.32, c);
     let mtn = 0;
     if (inland > 0 && s.mountainHeight > 0) {
-      const rangeMask = smoothstep(-0.25, 0.3, nMask.fbm(x * 1.3 + 3.1, y * 1.3 - 1.7, z * 1.3, 2));
+      const rangeMask = smoothstep(-0.25, 0.3, nMask.fbm(x * maskF + 3.1, y * maskF - 1.7, z * maskF, 2));
       if (rangeMask > 0) {
         const r = nRidge.ridged(qx * mf, qy * mf, qz * mf, 5);
         mtn = Math.pow(r, 2.4) * 1.35 * rangeMask * inland * s.mountainHeight;
@@ -104,13 +108,13 @@ export function generateTerrain(s: ShapeParams, preview = false, frequencyOverri
     }
 
     // Hills and small-scale relief.
-    const hills = hillAmt > 0 ? nHill.fbm(x * 7, y * 7, z * 7, 4, 2.1, 0.5) * hillAmt * (0.35 + 0.65 * inland) : 0;
+    const hills = hillAmt > 0 ? nHill.fbm(x * hillF, y * hillF, z * hillF, 4, 2.1, 0.5) * hillAmt * (0.35 + 0.65 * inland) : 0;
 
     heights[v] = land + mtn + hills;
     rock[v] = clamp(mtn * 1.1, 0, 1);
   }
 
-  if (s.craters > 0.001) applyCraters(dirs, V, heights, rock, s.craters, new Rng(mixSeed(s.seed, 0xc4a7e5)));
+  if (s.craters > 0.001) applyCraters(dirs, V, heights, rock, s.craters, new Rng(mixSeed(s.seed, 0xc4a7e5)), 1 / Math.pow(sf, 0.7));
 
   if (s.terraces > 0.001) {
     const step = 0.12;
@@ -131,9 +135,11 @@ export function generateTerrain(s: ShapeParams, preview = false, frequencyOverri
     const y = dirs[v * 3 + 1];
     const z = dirs[v * 3 + 2];
     const lat = Math.asin(clamp(y, -1, 1));
-    temps[v] = 1 - Math.pow(Math.abs(y), 1.6) + nTemp.fbm(x * 2.2, y * 2.2, z * 2.2, 2) * 0.14;
+    const tf = 2.2 * sf;
+    const mfq = 1.7 * sf;
+    temps[v] = 1 - Math.pow(Math.abs(y), 1.6) + nTemp.fbm(x * tf, y * tf, z * tf, 2) * 0.14;
     // Wet equator, dry subtropics (~30°), wet mid-latitudes, dry poles (Hadley/Ferrel cells).
-    moist[v] = 0.5 + nMoist.fbm(x * 1.7 + 11, y * 1.7, z * 1.7, 3) * 0.95 + 0.12 * Math.cos(6 * lat);
+    moist[v] = 0.5 + nMoist.fbm(x * mfq + 11, y * mfq, z * mfq, 3) * 0.95 + 0.12 * Math.cos(6 * lat);
   }
 
   // Coast proximity → moisture (continental interiors are drier).
@@ -155,8 +161,9 @@ export function generateTerrain(s: ShapeParams, preview = false, frequencyOverri
   // --- Mesh -----------------------------------------------------------------------------
   const positions = new Float32Array(V * 3);
   const data = new Float32Array(V * 4);
+  const relief = effectiveHeightScale(s);
   for (let v = 0; v < V; v++) {
-    const r = 1 + heights[v] * s.heightScale;
+    const r = 1 + heights[v] * relief;
     positions[v * 3] = dirs[v * 3] * r;
     positions[v * 3 + 1] = dirs[v * 3 + 1] * r;
     positions[v * 3 + 2] = dirs[v * 3 + 2] * r;
@@ -187,6 +194,7 @@ function applyCraters(
   rock: Float32Array,
   amount: number,
   rng: Rng,
+  sizeScale = 1,
 ): void {
   const count = Math.round(Math.pow(amount, 1.4) * 260) + 3;
   const cx = new Float32Array(count);
@@ -201,7 +209,7 @@ function applyCraters(
     cy[i] = y;
     cz[i] = z;
     // Many small craters, a few big ones.
-    const r = 0.025 + Math.pow(rng.next(), 3.2) * 0.3;
+    const r = (0.025 + Math.pow(rng.next(), 3.2) * 0.3) * sizeScale;
     cr[i] = r;
     cosMax[i] = Math.cos(Math.min(r * 1.9, Math.PI));
     floor[i] = rng.range(-0.7, -0.35);

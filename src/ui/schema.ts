@@ -12,7 +12,7 @@ export type Control =
   | { kind: 'swatches'; items: Array<[ColorKey, string]> }
   | {
       kind: 'segmented';
-      key: 'liquid' | 'lowPoly' | 'quality' | 'exportDetail';
+      key: 'liquid' | 'lowPoly' | 'cloudStyle' | 'quality' | 'exportDetail';
       label: string;
       options: Array<{ value: string; label: string }>;
     }
@@ -31,6 +31,7 @@ const deg = (v: number) => `${Math.round(v)}°`;
 const signed = (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(2)}`;
 const fixed = (d: number) => (v: number) => v.toFixed(d);
 const int = (v: number) => String(Math.round(v));
+const worldSize = (v: number) => (v < 0.15 ? 'Tiny' : v < 0.45 ? 'Small' : v < 0.8 ? 'Medium' : 'Large');
 
 export const TABS: Tab[] = [
   {
@@ -39,6 +40,7 @@ export const TABS: Tab[] = [
     icon: 'mountain',
     controls: [
       { kind: 'seed' },
+      { kind: 'slider', key: 'size', label: 'World size', min: 0, max: 1, step: 0.01, fmt: worldSize },
       {
         kind: 'segmented',
         key: 'lowPoly',
@@ -87,6 +89,20 @@ export const TABS: Tab[] = [
     ],
   },
   {
+    id: 'life',
+    label: 'Life',
+    icon: 'tree',
+    controls: [
+      { kind: 'heading', label: 'Nature', hint: 'Trees follow the biomes' },
+      { kind: 'slider', key: 'trees', label: 'Trees', min: 0, max: 1, step: 0.01, fmt: pct },
+      { kind: 'slider', key: 'rocks', label: 'Rocks', min: 0, max: 1, step: 0.01, fmt: pct },
+      { kind: 'heading', label: 'People', hint: 'Windows light up at night' },
+      { kind: 'slider', key: 'houses', label: 'Villages', min: 0, max: 1, step: 0.01, fmt: pct },
+      { kind: 'slider', key: 'cityLights', label: 'City lights', min: 0, max: 1, step: 0.01, fmt: pct },
+      { kind: 'swatches', items: [['cRoof', 'Roofs'], ['cCity', 'Lights']] },
+    ],
+  },
+  {
     id: 'water',
     label: 'Ocean',
     icon: 'drop',
@@ -119,6 +135,15 @@ export const TABS: Tab[] = [
       { kind: 'slider', key: 'haze', label: 'Haze', min: 0, max: 1, step: 0.01, fmt: pct },
       { kind: 'swatches', items: [['cSky', 'Scatter'], ['cHaze', 'Haze']] },
       { kind: 'heading', label: 'Clouds' },
+      {
+        kind: 'segmented',
+        key: 'cloudStyle',
+        label: 'Style',
+        options: [
+          { value: 'layer', label: 'Layer' },
+          { value: 'puffs', label: 'Puffs' },
+        ],
+      },
       { kind: 'slider', key: 'cloudCoverage', label: 'Coverage', min: 0, max: 1, step: 0.01, fmt: pct },
       { kind: 'slider', key: 'cloudOpacity', label: 'Opacity', min: 0, max: 1, step: 0.01, fmt: pct },
       { kind: 'slider', key: 'cloudScale', label: 'Size', min: 0.4, max: 4, step: 0.01, fmt: fixed(2) },
@@ -135,10 +160,9 @@ export const TABS: Tab[] = [
     label: 'Extras',
     icon: 'ring',
     controls: [
-      { kind: 'heading', label: 'Night side' },
-      { kind: 'slider', key: 'cityLights', label: 'City lights', min: 0, max: 1, step: 0.01, fmt: pct },
+      { kind: 'heading', label: 'Aurora' },
       { kind: 'slider', key: 'aurora', label: 'Aurora', min: 0, max: 1, step: 0.01, fmt: pct },
-      { kind: 'swatches', items: [['cCity', 'Cities'], ['cAurora', 'Aurora']] },
+      { kind: 'swatches', items: [['cAurora', 'Aurora']] },
       { kind: 'heading', label: 'Rings' },
       { kind: 'slider', key: 'rings', label: 'Ring density', min: 0, max: 1, step: 0.01, fmt: pct },
       { kind: 'slider', key: 'ringInner', label: 'Inner radius', min: 1.15, max: 2.5, step: 0.01, fmt: fixed(2) },

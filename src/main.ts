@@ -2,7 +2,7 @@ import './style.css';
 import './ui/ui.css';
 import { App } from './app/App';
 import { copyText, deliverFile, slug } from './export/deliver';
-import { DEFAULT_PARAMS, sanitizeParams, shapeParamsOf, type PlanetParams } from './planet/params';
+import { DEFAULT_PARAMS, effectiveHeightScale, sanitizeParams, shapeParamsOf, type PlanetParams } from './planet/params';
 import { getPreset } from './planet/presets';
 import { encodeParams, paramsFromHash, shareUrl } from './planet/share';
 import { detectDefaultQuality, type QualityLevel } from './render/quality';
@@ -90,7 +90,7 @@ const ui = new UI(uiRoot, app, {
       // Game-friendly resolution (low-poly planets keep their own facet count).
       const frequency = shape.lowPoly ? undefined : EXPORT_FREQUENCY[detail];
       const terrain = generateTerrain(shape, false, frequency);
-      const blob = await exportPlanetGLB(app.planet, app.params, terrain.mesh, shape.heightScale);
+      const blob = await exportPlanetGLB(app.planet, app.params, terrain.mesh, effectiveHeightScale(shape), app.quality.maxProps);
       const result = await deliverFile(blob, `${slug(app.params.name) || 'tiny-planet'}.glb`, app.params.name, askForTap);
       if (result === 'downloaded') ui.toast('Saved 3D model (.glb)');
     } catch (err) {

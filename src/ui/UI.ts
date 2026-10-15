@@ -47,6 +47,7 @@ export class UI {
   private readonly toastEl: HTMLElement;
   private toastTimer: number | undefined;
   private panelOpen: boolean;
+  private dismissHint: (() => void) | null = null;
   private activeTab = TABS[0].id;
   private exportDetail: ExportDetail = 'medium';
   private suppressHandleClick = false;
@@ -180,7 +181,9 @@ export class UI {
       hint.classList.remove('show');
       window.setTimeout(() => hint.remove(), 600);
       canvas.removeEventListener('pointerdown', hide);
+      this.dismissHint = null;
     };
+    this.dismissHint = hide;
     window.setTimeout(() => hint.classList.add('show'), 1400);
     window.setTimeout(hide, 7000);
     canvas.addEventListener('pointerdown', hide);
@@ -235,6 +238,7 @@ export class UI {
 
   private setPanelOpen(open: boolean): void {
     this.panelOpen = open;
+    if (open) this.dismissHint?.();
     this.root.classList.toggle('panel-open', open);
     this.updateInsets();
   }
@@ -452,6 +456,8 @@ export class UI {
           }
         } else if (c.key === 'lowPoly') {
           this.app.setParams({ lowPoly: o.value === 'true' });
+        } else if (c.key === 'cloudStyle') {
+          this.app.setParams({ cloudStyle: o.value as PlanetParams['cloudStyle'] });
         } else {
           this.app.setParams({ liquid: o.value as PlanetParams['liquid'] });
         }

@@ -15,6 +15,8 @@ const SHARE_KEYS: readonly ParamKey[] = [
   'cCity', 'aurora', 'cAurora', 'rings', 'ringInner', 'ringOuter', 'cRing1', 'cRing2', 'moons',
   'moonSize', 'cMoon', 'axialTilt', 'spinSpeed', 'sunAzimuth', 'sunElevation', 'sunIntensity', 'bloom',
   'exposure',
+  // v1.1: tiny worlds
+  'size', 'trees', 'rocks', 'houses', 'cRoof', 'cloudStyle',
 ];
 
 const FORMAT = '1.';

@@ -6,6 +6,9 @@ import { getPreset, PRESETS, type Preset } from './presets';
 
 const WEIGHTS: Record<string, number> = {
   terra: 4,
+  pocket: 2.5,
+  isle: 1.5,
+  snowglobe: 1.2,
   oceania: 2,
   dune: 1.4,
   rust: 1,
@@ -93,6 +96,7 @@ export function randomPlanet(presetId?: string, seed = randomSeed()): PlanetPara
   p.cloudStorms = rng.range(0.15, 0.9);
   p.cloudScale = jitter(p.cloudScale, 0.2);
   p.axialTilt = rng.range(4, 32);
+  if (p.size < 0.5) p.size = Math.min(0.3, Math.max(0, p.size + rng.normal(0, 0.05)));
   p.sunAzimuth = rng.range(52, 78);
   p.sunElevation = rng.range(4, 22);
 
