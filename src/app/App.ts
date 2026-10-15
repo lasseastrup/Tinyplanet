@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GeneratorClient } from '../planet/GeneratorClient';
 import type { MoonResult, TerrainResult } from '../planet/generator';
 import { placeProps } from '../planet/props';
@@ -17,6 +16,7 @@ import { PlanetView } from '../render/PlanetView';
 import { PostFX } from '../render/PostFX';
 import { qualitySettings, type QualityLevel, type QualitySettings } from '../render/quality';
 import { SpaceBackground } from '../render/SpaceBackground';
+import { GlobeControls } from './GlobeControls';
 
 export interface AppEvents {
   change?: (params: PlanetParams, changed: ParamKey[]) => void;
@@ -30,7 +30,7 @@ export class App {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
-  readonly controls: OrbitControls;
+  readonly controls: GlobeControls;
   readonly planet: PlanetView;
   readonly space: SpaceBackground;
   readonly post: PostFX;
@@ -86,10 +86,9 @@ export class App {
     this.camera = new THREE.PerspectiveCamera(FOV, 1, 0.05, 3000);
     this.camera.position.set(0, 1.6, 6.2);
 
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls = new GlobeControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.07;
-    this.controls.enablePan = false;
     this.controls.rotateSpeed = 0.55;
     this.controls.zoomSpeed = 0.9;
     this.controls.minDistance = 1.35;
