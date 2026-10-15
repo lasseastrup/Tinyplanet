@@ -644,7 +644,29 @@
   border-color: var(--line-strong);
 }
 
-/* ---------------------------------------------------------------- toast & hidden mode */
+/* ---------------------------------------------------------------- hint, toast & hidden mode */
+.hint {
+  position: absolute;
+  left: 50%;
+  top: 68%;
+  transform: translate(-50%, -50%) scale(0.96);
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: rgba(10, 12, 24, 0.55);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(238, 241, 255, 0.9);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none !important;
+}
+.hint.show {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
 .toast {
   position: absolute;
   left: 50%;

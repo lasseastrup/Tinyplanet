@@ -139,6 +139,7 @@ app.events.generated = () => {
     loader.classList.add('done');
     document.body.classList.add('ready');
     window.setTimeout(() => loader.remove(), 900);
+    ui.showHint(app.renderer.domElement);
   }
 };
 

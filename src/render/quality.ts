@@ -4,6 +4,8 @@ export interface QualityDefines {
   SUN_STEPS: number;
   CLOUD_OCTAVES: number;
   SHADOW_OCTAVES: number;
+  /** 1 = clouds cast shadows on the surface. */
+  CLOUD_SHADOWS: number;
   [key: string]: number;
 }
 
@@ -27,7 +29,7 @@ export function qualitySettings(level: QualityLevel): QualitySettings {
         atmoSteps: 8,
         atmoLightSteps: 3,
         maxFrequency: 80,
-        defines: { SUN_STEPS: 3, CLOUD_OCTAVES: 3, SHADOW_OCTAVES: 2 },
+        defines: { SUN_STEPS: 3, CLOUD_OCTAVES: 3, SHADOW_OCTAVES: 2, CLOUD_SHADOWS: 0 },
       };
     case 'medium':
       return {
@@ -37,7 +39,7 @@ export function qualitySettings(level: QualityLevel): QualitySettings {
         atmoSteps: 12,
         atmoLightSteps: 4,
         maxFrequency: 120,
-        defines: { SUN_STEPS: 4, CLOUD_OCTAVES: 4, SHADOW_OCTAVES: 3 },
+        defines: { SUN_STEPS: 4, CLOUD_OCTAVES: 4, SHADOW_OCTAVES: 3, CLOUD_SHADOWS: 1 },
       };
     default:
       return {
@@ -47,7 +49,7 @@ export function qualitySettings(level: QualityLevel): QualitySettings {
         atmoSteps: 16,
         atmoLightSteps: 6,
         maxFrequency: 192,
-        defines: { SUN_STEPS: 6, CLOUD_OCTAVES: 5, SHADOW_OCTAVES: 3 },
+        defines: { SUN_STEPS: 6, CLOUD_OCTAVES: 5, SHADOW_OCTAVES: 3, CLOUD_SHADOWS: 1 },
       };
   }
 }

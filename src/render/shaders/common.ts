@@ -163,12 +163,16 @@ float cloudField(vec3 p, int octaves) {
 }
 
 float cloudShadow(vec3 p) {
+#if CLOUD_SHADOWS == 0
+  return 1.0;
+#else
   if (uCloudShadow <= 0.001 || uCloudCoverage <= 0.001) return 1.0;
   vec2 t = raySphere(p, uSunDir, uPlanetCenter, uCloudRadius);
   if (t.y <= 0.0) return 1.0;
   vec3 hit = p + uSunDir * t.y;
   vec3 local = normalize((uCloudInvMatrix * vec4(hit, 1.0)).xyz);
   return 1.0 - cloudField(local, SHADOW_OCTAVES) * uCloudShadow * uCloudOpacity;
+#endif
 }
 
 // Bump mapping without tangents (Mikkelsen 2010), height in world units.

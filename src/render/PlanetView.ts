@@ -236,7 +236,8 @@ export class PlanetView {
       const mesh = new THREE.Mesh(meshToGeometry(info.mesh), this.moonMat);
       mesh.name = `Moon${i + 1}`;
       this.tilt.add(mesh);
-      return { mesh, info, angle: info.phase };
+      // The first moon starts front-right of the planet (sunlit and in view); others are random.
+      return { mesh, info, angle: i === 0 ? 1.25 : info.phase };
     });
     setDefine(this.moonMat, 'FLAT_SHADED', lowPoly);
     if (this.params) this.applyParams(this.params);
@@ -333,7 +334,7 @@ export class PlanetView {
     tu.uLavaColor.value.set(p.cShallow);
 
     this.moonMat.uniforms.uMoonColor.value.set(p.cMoon);
-    this.moonMat.uniforms.uDetailBump.value = 0.0;
+    this.moonMat.uniforms.uDetailBump.value = 0.0012 * p.moonSize / 0.2;
 
     // Ocean
     this.ocean.visible = hasOcean;
@@ -439,13 +440,13 @@ export class PlanetView {
     // Moons on inclined orbits, tidally locked.
     const atmoOuter = u.uAtmoOuter.value;
     const ringClear = p.rings > 0.001 ? p.ringOuter + 0.35 : 0;
-    const base = Math.max(2.2, atmoOuter + 0.8, ringClear);
+    const base = Math.max(1.8, atmoOuter + 0.5, ringClear);
     let count = 0;
     for (let i = 0; i < this.moons.length; i++) {
       const m = this.moons[i];
-      const radius = base + i * 0.75 + m.info.orbitFactor * 0.45;
+      const radius = base + i * 0.6 + m.info.orbitFactor * 0.35;
       const size = p.moonSize * m.info.sizeFactor;
-      m.angle += (dt * 0.35 * m.info.speedFactor) / Math.pow(radius / 2.2, 1.5);
+      m.angle += (dt * 0.3 * m.info.speedFactor) / Math.pow(radius / 2.2, 1.5);
       this.tmpVec.set(Math.cos(m.angle) * radius, 0, Math.sin(m.angle) * radius);
       this.tmpAxis.set(Math.cos(m.info.node), 0, Math.sin(m.info.node));
       this.tmpQuat.setFromAxisAngle(this.tmpAxis, m.info.inclination);

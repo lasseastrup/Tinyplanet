@@ -76,8 +76,8 @@ void main() {
 
 #ifdef MOON
   float mare = vData.z;
-  albedo = uMoonColor * mix(1.0, 0.58, mare) * (0.9 + 0.2 * (n2 * 0.5 + 0.5));
-  albedo *= 1.0 + vData.w * 0.35;
+  albedo = uMoonColor * 0.62 * mix(1.0, 0.45, mare) * (0.85 + 0.3 * (n2 * 0.5 + 0.5));
+  albedo *= 1.0 + vData.w * 0.4;
 #else
   float h = vData.x;
   elev = h - uSeaLevel;
@@ -113,7 +113,12 @@ void main() {
 #endif
 
 #ifndef FLAT_SHADED
+#ifdef MOON
+  // Moons are small on screen: low-frequency bump only, to avoid aliasing.
+  float bump = n1 * uDetailBump;
+#else
   float bump = (n1 * 0.6 + n2 * 0.4) * uDetailBump * (underwater ? 0.3 : 1.0) * (1.0 - snow * 0.5);
+#endif
   N = perturbNormal(vWorldPos, N, bump);
 #endif
 

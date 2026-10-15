@@ -157,6 +157,27 @@ export class UI {
     this.busyEl.classList.toggle('on', busy);
   }
 
+  /** One-time gesture hint for first-time visitors. */
+  showHint(canvas: HTMLElement): void {
+    try {
+      if (localStorage.getItem('tinyplanet.hinted')) return;
+      localStorage.setItem('tinyplanet.hinted', '1');
+    } catch {
+      /* storage unavailable: show the hint anyway */
+    }
+    const touch = window.matchMedia('(pointer: coarse)').matches;
+    const hint = el('div', 'hint', touch ? 'Drag to spin · Pinch to zoom' : 'Drag to spin · Scroll to zoom');
+    this.root.append(hint);
+    const hide = () => {
+      hint.classList.remove('show');
+      window.setTimeout(() => hint.remove(), 600);
+      canvas.removeEventListener('pointerdown', hide);
+    };
+    window.setTimeout(() => hint.classList.add('show'), 1400);
+    window.setTimeout(hide, 7000);
+    canvas.addEventListener('pointerdown', hide);
+  }
+
   toast(message: string): void {
     this.toastEl.textContent = message;
     this.toastEl.classList.add('show');
