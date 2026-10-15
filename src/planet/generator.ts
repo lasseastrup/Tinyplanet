@@ -245,27 +245,30 @@ function coastDistance(
 ): Float32Array {
   const dist = new Float32Array(V).fill(1e6);
   if (!hasOcean) return dist;
+  // Integer hop counts with a visited check: every vertex is enqueued exactly once.
+  const hops = new Int32Array(V).fill(-1);
   const queue = new Int32Array(V);
   let head = 0;
   let tail = 0;
   for (let v = 0; v < V; v++) {
     if (heights[v] <= seaLevel) {
-      dist[v] = 0;
+      hops[v] = 0;
       queue[tail++] = v;
     }
   }
   while (head < tail) {
     const v = queue[head++];
-    const d = dist[v] + hop;
+    const next = hops[v] + 1;
     for (let k = 0; k < 6; k++) {
       const n = nb[v * 6 + k];
       if (n < 0) break;
-      if (dist[n] > d) {
-        dist[n] = d;
+      if (hops[n] < 0) {
+        hops[n] = next;
         queue[tail++] = n;
       }
     }
   }
+  for (let v = 0; v < V; v++) if (hops[v] >= 0) dist[v] = hops[v] * hop;
   return dist;
 }
 

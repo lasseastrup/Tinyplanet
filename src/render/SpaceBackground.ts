@@ -134,6 +134,14 @@ export class SpaceBackground {
     this.group.add(this.sun);
   }
 
+  dispose(): void {
+    this.stars.geometry.dispose();
+    this.starMaterial.dispose();
+    this.sun.geometry.dispose();
+    this.sunMaterial.dispose();
+    this.cubeTarget?.dispose();
+  }
+
   setPixelRatio(pr: number): void {
     this.starMaterial.uniforms.uPixelRatio.value = pr;
   }

@@ -4,12 +4,14 @@ const CACHE = `tinyplanet-${VERSION}`;
 const PRECACHE = __PRECACHE__;
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches
-      .open(CACHE)
-      .then((cache) => cache.addAll(PRECACHE))
-      .then(() => self.skipWaiting()),
-  );
+  // Bypass the HTTP cache so the precache can't mix files from two deployments.
+  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(PRECACHE.map((url) => new Request(url, { cache: 'reload' })))));
+  // No skipWaiting() here: taking over open tabs would delete the cache their lazy chunks
+  // come from. The page asks us to activate (see the 'message' handler) when the user agrees.
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -20,6 +22,8 @@ self.addEventListener('activate', (event) => {
       .then(() => self.clients.claim()),
   );
 });
+
+const cacheable = (response) => response && response.ok && response.type === 'basic';
 
 self.addEventListener('fetch', (event) => {
   const request = event.request;
@@ -32,8 +36,10 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put('./', copy));
+          if (cacheable(response)) {
+            const copy = response.clone();
+            caches.open(CACHE).then((cache) => cache.put('./', copy));
+          }
           return response;
         })
         .catch(() => caches.match('./', { ignoreSearch: true })),
@@ -47,7 +53,7 @@ self.addEventListener('fetch', (event) => {
       (cached) =>
         cached ||
         fetch(request).then((response) => {
-          if (response.ok) {
+          if (cacheable(response)) {
             const copy = response.clone();
             caches.open(CACHE).then((cache) => cache.put(request, copy));
           }

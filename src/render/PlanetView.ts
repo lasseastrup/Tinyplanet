@@ -440,13 +440,15 @@ export class PlanetView {
 
     // Moons on inclined orbits, tidally locked.
     const atmoOuter = u.uAtmoOuter.value;
-    const ringClear = p.rings > 0.001 ? p.ringOuter + 0.35 : 0;
-    const base = Math.max(1.8, atmoOuter + 0.5, ringClear);
+    const ringClear = p.rings > 0.001 ? p.ringOuter + 0.2 : 0;
+    // Each orbit clears the previous moon by both radii plus a gap, so moons never collide.
+    let inner = Math.max(1.62, atmoOuter + 0.35, ringClear);
     let count = 0;
     for (let i = 0; i < this.moons.length; i++) {
       const m = this.moons[i];
-      const radius = base + i * 0.6 + m.info.orbitFactor * 0.35;
       const size = p.moonSize * m.info.sizeFactor;
+      const radius = inner + size + (i > 0 ? 0.12 : 0) + m.info.orbitFactor * 0.3;
+      inner = radius + size;
       m.angle += (dt * 0.3 * m.info.speedFactor) / Math.pow(radius / 2.2, 1.5);
       this.tmpVec.set(Math.cos(m.angle) * radius, 0, Math.sin(m.angle) * radius);
       this.tmpAxis.set(Math.cos(m.info.node), 0, Math.sin(m.info.node));

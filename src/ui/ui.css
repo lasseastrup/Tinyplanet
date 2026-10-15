@@ -688,6 +688,24 @@
   opacity: 1;
   transform: translate(-50%, 0);
 }
+.toast.has-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 6px 6px 16px;
+}
+.toast.has-action.show {
+  pointer-events: auto !important;
+}
+.toast-action {
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-weight: 700;
+  font-size: 13px;
+  color: #0c0b1a !important;
+  background: linear-gradient(135deg, #bfe0ff 0%, #d9b8ff 55%, #ffc2e2 100%);
+}
 .show-ui {
   position: absolute;
   top: calc(14px + var(--safe-top));

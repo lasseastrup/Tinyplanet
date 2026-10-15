@@ -51,8 +51,8 @@ void main() {
   vec3 dir = normalize(vLocalPos);
 
 #ifdef FLAT_SHADED
-  vec3 N = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
-  if (dot(N, up) < 0.0) N = -N;
+  // Low-poly meshes carry per-face normals already.
+  vec3 N = normalize(vWorldNormal);
   float n1 = 0.0;
   float n2 = 0.0;
 #else
@@ -65,8 +65,9 @@ void main() {
 #endif
   float n1 = snoise(np);
   float n2 = snoise(np * 2.9 + 13.0);
-  // Extra micro detail when the camera is close.
-  if (uDetailBoost > 0.5) n2 = n2 * 0.7 + snoise(np * 8.1 - 3.0) * 0.45;
+  // Extra micro detail fades in as the camera gets close.
+  float boost = clamp(uDetailBoost, 0.0, 1.0);
+  if (boost > 0.0) n2 = mix(n2, n2 * 0.7 + snoise(np * 8.1 - 3.0) * 0.45, boost);
 #endif
   float nd = n1 * 0.65 + n2 * 0.35;
   float slope = 1.0 - max(dot(N, up), 0.0);

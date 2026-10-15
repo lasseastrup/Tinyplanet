@@ -83,8 +83,7 @@ void main() {
   }
 
 #ifdef FLAT_SHADED
-  vec3 N = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
-  if (dot(N, up) < 0.0) N = -N;
+  vec3 N = faceNormal(vWorldPos, up);
 #else
   vec3 N = up;
   if (uWaves > 0.001) {

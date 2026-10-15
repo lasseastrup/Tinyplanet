@@ -123,7 +123,8 @@ vec3 rotateAxis(vec3 p, vec3 axis, float angle) {
 
 // Cloud density in [0,1] for a unit direction in cloud-local space.
 // x = full detail density, y = smooth (2-octave) density used for lighting normals.
-vec2 cloudFieldDual(vec3 p, int octaves) {
+// "extra" (0..2) fades in additional octaves continuously (used when zoomed in).
+vec2 cloudFieldDual(vec3 p, int octaves, float extra) {
   float eye = 0.0;
   for (int i = 0; i < 4; i++) {
     vec4 st = uStorms[i];
@@ -145,9 +146,11 @@ vec2 cloudFieldDual(vec3 p, int octaves) {
   float n = 0.0;
   float nSmooth = 0.0;
   float amp = 0.5;
+  int total = octaves + int(ceil(extra));
   for (int i = 0; i < 8; i++) {
-    if (i >= octaves) break;
-    n += amp * snoise(fp);
+    if (i >= total) break;
+    float w = i < octaves ? 1.0 : clamp(extra - float(i - octaves), 0.0, 1.0);
+    n += amp * w * snoise(fp);
     if (i == 1) nSmooth = n;
     fp = fp * 2.03 + vec3(17.3, -9.1, 4.7);
     amp *= 0.5;
@@ -161,7 +164,16 @@ vec2 cloudFieldDual(vec3 p, int octaves) {
 }
 
 float cloudField(vec3 p, int octaves) {
-  return cloudFieldDual(p, octaves).x;
+  return cloudFieldDual(p, octaves, 0.0).x;
+}
+
+// Face normal from screen-space derivatives, robust for (nearly) edge-on triangles.
+vec3 faceNormal(vec3 worldPos, vec3 fallback) {
+  vec3 c = cross(dFdx(worldPos), dFdy(worldPos));
+  float len = length(c);
+  if (len < 1e-12) return fallback;
+  c /= len;
+  return dot(c, fallback) < 0.0 ? -c : c;
 }
 
 float cloudShadow(vec3 p) {

@@ -55,7 +55,7 @@ void main() {
   d *= 0.4 + 0.6 * uCirrus;
   float dSmooth = d;
 #else
-  vec2 dd = cloudFieldDual(dir, CLOUD_OCTAVES + int(uDetailBoost));
+  vec2 dd = cloudFieldDual(dir, CLOUD_OCTAVES, uDetailBoost);
   float d = dd.x;
   float dSmooth = dd.y;
 #endif
@@ -70,8 +70,7 @@ void main() {
   float thickness = smoothstep(0.15, 0.85, d);
   vec3 N = up;
 #if defined(FLAT_SHADED)
-  N = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
-  if (dot(N, up) < 0.0) N = -N;
+  N = faceNormal(vWorldPos, up);
   thickness = 0.6;
 #elif !defined(CIRRUS)
   N = normalize(mix(up, perturbNormal(vWorldPos, up, dSmooth * 0.016), thickness));

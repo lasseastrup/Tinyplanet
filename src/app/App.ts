@@ -52,7 +52,7 @@ export class App {
   private targetInsets = { right: 0, bottom: 0 };
   private hasTerrain = false;
   /** Camera dolly animation (fly-in on first load, gentle swoosh when switching planets). */
-  private dolly: { t: number; duration: number; curve: (t: number) => number } | null = null;
+  private dolly: { t: number; duration: number; base: number; curve: (t: number) => number } | null = null;
   private disposed = false;
   private paused = false;
   /** Set to render frames on demand only (e.g. for screenshots in tests). */
@@ -113,8 +113,8 @@ export class App {
     });
     this.generator.onBusy((busy) => this.events.busy?.(busy));
 
-    this.applyLook();
     this.planet.applyParams(this.params);
+    this.applyLook();
     this.space.build(this.renderer, this.scene, this.params.seed);
     this.regenerate({ terrain: true, moons: true }, true);
 
@@ -179,31 +179,32 @@ export class App {
     this.adaptResolution(dt);
   }
 
-  /** Scale the camera distance by curve(t) over `duration` seconds (curve(1) must be 1). */
+  /** Animate the camera distance as base·curve(t) over `duration` seconds (curve(1) must be 1). */
   private startDolly(duration: number, curve: (t: number) => number): void {
     if (this.dolly) this.animateDolly(1e3); // finish any running dolly first
-    this.scaleCameraDistance(curve(0));
-    this.dolly = { t: 0, duration, curve };
+    const base = this.camera.position.distanceTo(this.controls.target);
+    this.dolly = { t: 0, duration, base, curve };
+    this.setCameraDistance(base * curve(0));
   }
 
   private animateDolly(dt: number): void {
     const d = this.dolly;
     if (!d) return;
-    const prev = d.curve(d.t);
     d.t = Math.min(1, d.t + dt / d.duration);
-    this.scaleCameraDistance(d.curve(d.t) / prev);
+    // Absolute distances: clamping by the controls can't make the camera creep over time.
+    this.setCameraDistance(d.base * d.curve(d.t));
     if (d.t >= 1) this.dolly = null;
   }
 
-  private scaleCameraDistance(factor: number): void {
-    const offset = this.camera.position.clone().sub(this.controls.target).multiplyScalar(factor);
+  private setCameraDistance(distance: number): void {
+    const offset = this.camera.position.clone().sub(this.controls.target).setLength(distance);
     this.camera.position.copy(this.controls.target).add(offset);
   }
 
-  /** More cloud/terrain octaves when the camera is close to the surface. */
+  /** More cloud/terrain octaves when the camera is close (continuous, so detail fades in). */
   private updateDetailBoost(): void {
     const dist = this.camera.position.distanceTo(this.controls.target);
-    const boost = this.quality.level === 'low' ? 0 : dist < 2.5 ? 2 : dist < 3.5 ? 1 : 0;
+    const boost = this.quality.level === 'low' ? 0 : THREE.MathUtils.clamp((3.9 - dist) / 0.9, 0, 2);
     this.planet.uniforms.uDetailBoost.value = boost;
   }
 
@@ -282,8 +283,11 @@ export class App {
       this.generator.request(shape, what, true);
       this.scheduleFull({ terrain: true, moons: false }, 220);
     } else {
-      window.clearTimeout(this.fullTimer);
-      this.fullPending = false;
+      if (what.terrain) {
+        // This request already delivers full-quality terrain; a pending refinement is redundant.
+        window.clearTimeout(this.fullTimer);
+        this.fullPending = false;
+      }
       this.generator.request(shape, what, false);
     }
   }
@@ -348,6 +352,7 @@ export class App {
     const offset = this.camera.position.clone().sub(this.controls.target);
     const current = offset.length();
     const next = reset || !Number.isFinite(current) || current === 0 ? fit : (current * fit) / this.fitDistance;
+    if (this.dolly) this.dolly.base = reset ? fit : (this.dolly.base * fit) / this.fitDistance;
     this.fitDistance = fit;
     if (reset) offset.set(0, 0.26, 1);
     offset.setLength(THREE.MathUtils.clamp(next, this.controls.minDistance, this.controls.maxDistance));
@@ -394,6 +399,7 @@ export class App {
     document.removeEventListener('visibilitychange', this.onVisibility);
     this.generator.dispose();
     this.planet.dispose();
+    this.space.dispose();
     this.post.dispose();
     this.controls.dispose();
     this.renderer.dispose();

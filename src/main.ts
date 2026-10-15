@@ -28,10 +28,11 @@ function storageSet(key: string, value: string): void {
 }
 
 function initialParams(search: URLSearchParams): PlanetParams {
-  const presetId = search.get('preset');
-  if (presetId && getPreset(presetId)) return getPreset(presetId)!.params;
+  // A planet in the hash (share link or the user's own edits) wins over ?preset=.
   const fromHash = paramsFromHash(location.hash);
   if (fromHash) return fromHash;
+  const presetId = search.get('preset');
+  if (presetId && getPreset(presetId)) return getPreset(presetId)!.params;
   const saved = storageGet(STORAGE_KEY);
   if (saved) {
     try {
@@ -75,6 +76,9 @@ const loader = document.getElementById('loader');
 
 const app = new App(viewport, initialParams(search), initialQuality(search));
 
+/** Phones refuse the share sheet when the tap that started a slow export has expired. */
+const askForTap = (retry: () => void) => ui.actionToast('Your file is ready', 'Save', retry);
+
 const ui = new UI(uiRoot, app, {
   async exportGLB(detail) {
     if (!app.ready) return;
@@ -87,7 +91,7 @@ const ui = new UI(uiRoot, app, {
       const frequency = shape.lowPoly ? undefined : EXPORT_FREQUENCY[detail];
       const terrain = generateTerrain(shape, false, frequency);
       const blob = await exportPlanetGLB(app.planet, app.params, terrain.mesh, shape.heightScale);
-      const result = await deliverFile(blob, `${slug(app.params.name) || 'tiny-planet'}.glb`, app.params.name);
+      const result = await deliverFile(blob, `${slug(app.params.name) || 'tiny-planet'}.glb`, app.params.name, askForTap);
       if (result === 'downloaded') ui.toast('Saved 3D model (.glb)');
     } catch (err) {
       console.error(err);
@@ -96,9 +100,12 @@ const ui = new UI(uiRoot, app, {
   },
   exportJSON() {
     const json = JSON.stringify({ generator: 'Tiny Planet', version: 1, params: app.params }, null, 2);
-    void deliverFile(new Blob([json], { type: 'application/json' }), `${slug(app.params.name) || 'tiny-planet'}.json`, app.params.name).then(
-      (r) => r === 'downloaded' && ui.toast('Saved planet settings (.json)'),
-    );
+    void deliverFile(
+      new Blob([json], { type: 'application/json' }),
+      `${slug(app.params.name) || 'tiny-planet'}.json`,
+      app.params.name,
+      askForTap,
+    ).then((r) => r === 'downloaded' && ui.toast('Saved planet settings (.json)'));
   },
   async share() {
     const url = shareUrl(app.params);
@@ -118,7 +125,7 @@ const ui = new UI(uiRoot, app, {
   async screenshot() {
     const blob = await app.screenshot();
     if (!blob) return;
-    const result = await deliverFile(blob, `${slug(app.params.name) || 'tiny-planet'}.png`, app.params.name);
+    const result = await deliverFile(blob, `${slug(app.params.name) || 'tiny-planet'}.png`, app.params.name, askForTap);
     if (result === 'downloaded') ui.toast('Screenshot saved');
   },
 });
@@ -129,7 +136,10 @@ app.events.change = (params, changed) => {
   ui.refresh(params, changed);
   window.clearTimeout(syncTimer);
   syncTimer = window.setTimeout(() => {
-    history.replaceState(null, '', `${location.pathname}${location.search}#p=${encodeParams(params)}`);
+    const url = new URL(location.href);
+    url.searchParams.delete('preset'); // the hash now describes the planet
+    url.hash = `p=${encodeParams(params)}`;
+    history.replaceState(null, '', url);
     storageSet(STORAGE_KEY, JSON.stringify(params));
   }, 400);
 };
@@ -155,8 +165,33 @@ app.start();
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch((err) => console.warn('Service worker registration failed', err));
+    void registerServiceWorker();
   });
+}
+
+/** Offline support. New versions wait until the user taps "Update" (or the app is relaunched). */
+async function registerServiceWorker(): Promise<void> {
+  try {
+    const registration = await navigator.serviceWorker.register('./sw.js');
+    let updateRequested = false;
+    const offerUpdate = (worker: ServiceWorker) =>
+      ui.actionToast('A new version is ready', 'Update', () => {
+        updateRequested = true;
+        worker.postMessage({ type: 'SKIP_WAITING' });
+      }, 20000);
+    if (registration.waiting && navigator.serviceWorker.controller) offerUpdate(registration.waiting);
+    registration.addEventListener('updatefound', () => {
+      const worker = registration.installing;
+      worker?.addEventListener('statechange', () => {
+        if (worker.state === 'installed' && navigator.serviceWorker.controller) offerUpdate(worker);
+      });
+    });
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (updateRequested) location.reload();
+    });
+  } catch (err) {
+    console.warn('Service worker registration failed', err);
+  }
 }
 
 declare global {

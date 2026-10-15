@@ -49,6 +49,7 @@ export class UI {
   private panelOpen: boolean;
   private activeTab = TABS[0].id;
   private exportDetail: ExportDetail = 'medium';
+  private suppressHandleClick = false;
   private readonly mobile = window.matchMedia(MOBILE_QUERY);
 
   constructor(
@@ -125,7 +126,14 @@ export class UI {
     shotBtn.addEventListener('click', () => void this.handlers.screenshot());
     shareBtn.addEventListener('click', () => void this.handlers.share());
     panelBtn.addEventListener('click', () => this.setPanelOpen(!this.panelOpen));
-    handle.addEventListener('click', () => this.setPanelOpen(!this.panelOpen));
+    handle.addEventListener('click', () => {
+      // A drag already decided the state; ignore the click the browser fires after it.
+      if (this.suppressHandleClick) {
+        this.suppressHandleClick = false;
+        return;
+      }
+      this.setPanelOpen(!this.panelOpen);
+    });
     showUi.addEventListener('click', () => this.setHidden(false));
     this.setupNameEditing();
     this.setupSheetDrag(handle);
@@ -180,9 +188,25 @@ export class UI {
 
   toast(message: string): void {
     this.toastEl.textContent = message;
+    this.toastEl.classList.remove('has-action');
     this.toastEl.classList.add('show');
     window.clearTimeout(this.toastTimer);
     this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('show'), 2200);
+  }
+
+  /** A toast with a button; used when an action needs a fresh tap (share sheet, app update). */
+  actionToast(message: string, actionLabel: string, onAction: () => void, durationMs = 12000): void {
+    this.toastEl.textContent = message;
+    const button = el('button', 'toast-action', actionLabel);
+    button.type = 'button';
+    button.addEventListener('click', () => {
+      this.toastEl.classList.remove('show');
+      onAction();
+    });
+    this.toastEl.append(button);
+    this.toastEl.classList.add('show', 'has-action');
+    window.clearTimeout(this.toastTimer);
+    this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('show'), durationMs);
   }
 
   // ---------------------------------------------------------------------------------------
@@ -270,6 +294,7 @@ export class UI {
     };
     name.addEventListener('click', start);
     name.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === 'Escape') e.stopPropagation();
       if (e.key === 'Enter' && !name.isContentEditable) {
         e.preventDefault();
         start();
@@ -300,8 +325,10 @@ export class UI {
       if (!dragging) return;
       dragging = false;
       const dy = e.clientY - startY;
-      if (dy > 40) this.setPanelOpen(false);
-      else if (dy < -40) this.setPanelOpen(true);
+      if (Math.abs(dy) > 40) {
+        this.suppressHandleClick = true;
+        this.setPanelOpen(dy < 0);
+      }
     });
   }
 
