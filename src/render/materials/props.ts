@@ -86,16 +86,16 @@ void main() {
 #ifdef PUFF
   // Puffy clouds: bright, softly wrapped light, lit a little past the terminator.
   float dayMask = smoothstep(-0.1, 0.12, sunDot);
+  // Puffs cast sun shadows but don't sample the shadow map themselves: they drift between
+  // shadow-map updates, which would make self-shadowing flicker.
   vec3 sunLight = uSunColor * sunTransmittance(vWorldPos) * dayMask * ringShadow(vWorldPos) * moonShadow(vWorldPos);
-  sunLight *= mix(0.35, 1.0, sunShadowMap(vWorldPos, N));
   float wrap = max(dot(N, L), 0.0) * 0.6 + 0.4 * smoothstep(-0.4, 0.8, dot(N, L));
   // Shading fades out towards the terminator so twilight puffs stay soft.
   float diff = mix(0.45, wrap, smoothstep(0.0, 0.3, sunDot));
   float ao = vAO;
-  vec3 col = uPuffColor * 0.88 * (sunLight * diff * mix(0.75, 1.0, ao) + (sky * 1.1 + ambient * 1.4) * ao);
-  // Silver lining where the sun shines through the edges.
-  float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
-  col += uPuffColor * sunLight * rim * (0.12 + 0.6 * pow(max(dot(-V, L), 0.0), 2.0));
+  vec3 col = uPuffColor * 0.78 * (sunLight * diff * mix(0.75, 1.0, ao) + (sky * 0.8 + ambient * 1.4) * ao);
+  // Stay below the bloom threshold: thin, bright cloud edges would otherwise glow and flicker.
+  col = min(col, vec3(1.7));
 #else
   float dayMask = smoothstep(-0.07, 0.12, sunDot);
   float shadow = ringShadow(vWorldPos) * moonShadow(vWorldPos) * cloudShadow(vWorldPos) * sunShadowMap(vWorldPos, N);
