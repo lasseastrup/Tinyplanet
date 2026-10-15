@@ -10,7 +10,7 @@ interface WorkerScope {
 const ctx = self as unknown as WorkerScope;
 
 function transferablesOf(mesh: MeshData, out: Transferable[]): void {
-  out.push(mesh.positions.buffer, mesh.normals.buffer, mesh.data.buffer);
+  out.push(mesh.positions.buffer, mesh.normals.buffer, mesh.data.buffer, mesh.ao.buffer);
   if (mesh.indices) out.push(mesh.indices.buffer);
 }
 

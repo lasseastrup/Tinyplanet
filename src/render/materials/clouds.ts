@@ -55,7 +55,7 @@ void main() {
   d *= 0.4 + 0.6 * uCirrus;
   float dSmooth = d;
 #else
-  vec2 dd = cloudFieldDual(dir, CLOUD_OCTAVES);
+  vec2 dd = cloudFieldDual(dir, CLOUD_OCTAVES + int(uDetailBoost));
   float d = dd.x;
   float dSmooth = dd.y;
 #endif

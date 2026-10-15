@@ -26,6 +26,7 @@ export async function exportPlanetGLB(view: PlanetView, params: PlanetParams, me
   const pos = new THREE.BufferAttribute(mesh.positions, 3);
   const nor = new THREE.BufferAttribute(mesh.normals, 3);
   const dat = new THREE.BufferAttribute(mesh.data, 4);
+  const occ = mesh.ao;
   const index = mesh.indices ? new THREE.BufferAttribute(mesh.indices, 1) : null;
 
   // --- Terrain with baked vertex colours ---------------------------------------------------
@@ -40,9 +41,10 @@ export async function exportPlanetGLB(view: PlanetView, params: PlanetParams, me
     const len = Math.hypot(x, y, z) || 1;
     const slope = 1 - Math.max(0, (nor.getX(i) * x + nor.getY(i) * y + nor.getZ(i) * z) / len);
     terrainAlbedo(ctx, dat.getX(i), dat.getY(i), dat.getZ(i), dat.getW(i), slope, c);
-    colors[i * 3] = toByte(c[0]);
-    colors[i * 3 + 1] = toByte(c[1]);
-    colors[i * 3 + 2] = toByte(c[2]);
+    const ao = 0.3 + 0.7 * occ[i];
+    colors[i * 3] = toByte(c[0] * ao);
+    colors[i * 3 + 1] = toByte(c[1] * ao);
+    colors[i * 3 + 2] = toByte(c[2] * ao);
   }
   const terrain = new THREE.BufferGeometry();
   terrain.setAttribute('position', pos);
@@ -136,9 +138,10 @@ export async function exportPlanetGLB(view: PlanetView, params: PlanetParams, me
     const g = m.geometry;
     const mp = g.getAttribute('position') as THREE.BufferAttribute;
     const md = g.getAttribute('aData') as THREE.BufferAttribute;
+    const mao = g.getAttribute('aAO') as THREE.BufferAttribute | undefined;
     const col = new Uint8Array(mp.count * 3);
     for (let v = 0; v < mp.count; v++) {
-      const shade = (1 - 0.42 * md.getZ(v)) * (1 + md.getW(v) * 0.35);
+      const shade = (1 - 0.42 * md.getZ(v)) * (1 + md.getW(v) * 0.35) * (mao ? 0.3 + 0.7 * mao.getX(v) : 1);
       col[v * 3] = toByte(moonColor[0] * shade);
       col[v * 3 + 1] = toByte(moonColor[1] * shade);
       col[v * 3 + 2] = toByte(moonColor[2] * shade);

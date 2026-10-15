@@ -280,7 +280,7 @@ export const PRESETS: readonly Preset[] = [
     seed: 1969,
     liquid: 'none',
     seaLevel: -0.3,
-    heightScale: 0.05,
+    heightScale: 0.036,
     craters: 0.9,
     mountainHeight: 0.3,
     roughness: 0.7,

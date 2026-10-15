@@ -5,6 +5,7 @@
 import { clamp, lerp, smoothMax, smoothMin, smoothstep } from '../core/math';
 import { Simplex3 } from '../core/noise';
 import { Rng, mixSeed } from '../core/rng';
+import { cavityOcclusion } from './ao';
 import { buildIcosphere, buildNeighbors } from './icosphere';
 import { terrainFrequency, type ShapeParams } from './params';
 
@@ -13,6 +14,8 @@ export interface MeshData {
   normals: Float32Array;
   /** Per vertex: x = height (terrain units), y = base temperature, z = moisture, w = rockiness. */
   data: Float32Array;
+  /** Per vertex ambient occlusion from surface cavity (≈0.5 in deep valleys … ≈1.08 on ridges). */
+  ao: Float32Array;
   /** null for non-indexed (flat shaded) meshes. */
   indices: Uint32Array | null;
 }
@@ -134,7 +137,9 @@ export function generateTerrain(s: ShapeParams, preview = false, frequencyOverri
   }
 
   // Coast proximity → moisture (continental interiors are drier).
-  const coast = coastDistance(V, topo.indices, heights, s.seaLevel, s.hasOcean, ICO_EDGE_ARC / freq);
+  const neighbors = buildNeighbors(V, topo.indices);
+  const coast = coastDistance(V, neighbors, heights, s.seaLevel, s.hasOcean, ICO_EDGE_ARC / freq);
+  const ao = cavityOcclusion(heights, neighbors, freq);
   let landCount = 0;
   let minH = Infinity;
   let maxH = -Infinity;
@@ -162,8 +167,8 @@ export function generateTerrain(s: ShapeParams, preview = false, frequencyOverri
   }
 
   const mesh = s.lowPoly
-    ? toFlatMesh(positions, data, topo.indices)
-    : { positions, normals: computeNormals(positions, topo.indices, V), data, indices: topo.indices.slice() };
+    ? toFlatMesh(positions, data, ao, topo.indices)
+    : { positions, normals: computeNormals(positions, topo.indices, V), data, ao, indices: topo.indices.slice() };
 
   return {
     mesh,
@@ -232,7 +237,7 @@ function applyCraters(
 /** Geodesic-ish distance (radians) from each vertex to the nearest ocean vertex, via BFS. */
 function coastDistance(
   V: number,
-  indices: Uint32Array,
+  nb: Int32Array,
   heights: Float32Array,
   seaLevel: number,
   hasOcean: boolean,
@@ -240,7 +245,6 @@ function coastDistance(
 ): Float32Array {
   const dist = new Float32Array(V).fill(1e6);
   if (!hasOcean) return dist;
-  const nb = buildNeighbors(V, indices);
   const queue = new Int32Array(V);
   let head = 0;
   let tail = 0;
@@ -297,11 +301,12 @@ export function computeNormals(positions: Float32Array, indices: Uint32Array, V:
 }
 
 /** Convert an indexed mesh into a non-indexed, flat-shaded one with per-face attributes. */
-function toFlatMesh(positions: Float32Array, data: Float32Array, indices: Uint32Array): MeshData {
+function toFlatMesh(positions: Float32Array, data: Float32Array, ao: Float32Array, indices: Uint32Array): MeshData {
   const T = indices.length / 3;
   const pos = new Float32Array(T * 9);
   const nor = new Float32Array(T * 9);
   const dat = new Float32Array(T * 12);
+  const occ = new Float32Array(T * 3);
   for (let t = 0; t < T; t++) {
     const ia = indices[t * 3];
     const ib = indices[t * 3 + 1];
@@ -331,8 +336,12 @@ function toFlatMesh(positions: Float32Array, data: Float32Array, indices: Uint32
       dat[t * 12 + 4 + c] = avg;
       dat[t * 12 + 8 + c] = avg;
     }
+    const faceAo = (ao[ia] + ao[ib] + ao[ic]) / 3;
+    occ[t * 3] = faceAo;
+    occ[t * 3 + 1] = faceAo;
+    occ[t * 3 + 2] = faceAo;
   }
-  return { positions: pos, normals: nor, data: dat, indices: null };
+  return { positions: pos, normals: nor, data: dat, ao: occ, indices: null };
 }
 
 // --- Moons --------------------------------------------------------------------------------
@@ -377,9 +386,10 @@ function generateMoon(seed: number, index: number, lowPoly: boolean): MoonResult
     data[v * 4 + 2] = smoothstep(-0.1, 0.35, nMare.fbm(x * 1.2, y * 1.2, z * 1.2, 3)); // dark "maria"
     data[v * 4 + 3] = rock[v];
   }
+  const ao = cavityOcclusion(heights, buildNeighbors(V, topo.indices), freq * 2.5);
   const mesh = lowPoly
-    ? toFlatMesh(positions, data, topo.indices)
-    : { positions, normals: computeNormals(positions, topo.indices, V), data, indices: topo.indices.slice() };
+    ? toFlatMesh(positions, data, ao, topo.indices)
+    : { positions, normals: computeNormals(positions, topo.indices, V), data, ao, indices: topo.indices.slice() };
   return {
     mesh,
     sizeFactor: rng.range(0.65, 1.25),

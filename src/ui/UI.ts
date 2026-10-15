@@ -168,6 +168,7 @@ export class UI {
   private choosePreset(id: string): void {
     const preset = getPreset(id);
     if (!preset) return;
+    navigator.vibrate?.(8);
     if (this.app.params.preset === id) {
       this.app.setParams(randomPlanet(id));
       this.toast(`New ${preset.label} variation`);
@@ -177,6 +178,7 @@ export class UI {
   }
 
   private randomize(): void {
+    navigator.vibrate?.(10);
     this.app.setParams(randomPlanet());
   }
 

@@ -7,10 +7,14 @@ can be installed on a phone's home screen, and exports planets for use in games.
 
 **Play:** https://lasseastrup.github.io/Tinyplanet/ (after GitHub Pages is enabled, see [Deploying](#deploying-to-github-pages))
 
+![Tiny Planet generator](docs/screenshot.jpg)
+
+![A few of the presets](docs/presets.jpg)
+
 ## Features
 
 **Terrain** (generated in a Web Worker, deterministic per seed)
-- Geodesic icosphere mesh without seams, from 10k to 360k vertices
+- Geodesic icosphere mesh without seams: ~16k to ~360k vertices (smooth style), or a few thousand facets (low-poly)
 - Domain-warped fBm continents, ridged mountain ranges, hills, optional terraces and craters
 - Smooth or low-poly (flat-shaded, per-face colors) style
 - Moons with craters and dark "maria"
@@ -52,7 +56,7 @@ can be installed on a phone's home screen, and exports planets for use in games.
 - **iPhone / iPad (Safari):** open the site, tap **Share** → **Add to Home Screen**.
 - **Android (Chrome):** open the site, tap **⋮** → **Install app** (or **Add to Home screen**).
 
-The app opens full screen, works offline after the first visit, and reopens the last planet you made.
+It then launches like a native app without browser bars, works offline after the first visit, and reopens the last planet you made.
 
 ## Controls
 

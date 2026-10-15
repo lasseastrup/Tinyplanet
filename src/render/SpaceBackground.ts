@@ -209,7 +209,7 @@ export class SpaceBackground {
     bakeScene.add(sphere);
 
     if (!this.cubeTarget) {
-      this.cubeTarget = new THREE.WebGLCubeRenderTarget(512, {
+      this.cubeTarget = new THREE.WebGLCubeRenderTarget(256, {
         type: THREE.HalfFloatType,
         generateMipmaps: false,
         minFilter: THREE.LinearFilter,

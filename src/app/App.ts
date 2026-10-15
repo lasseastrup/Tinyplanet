@@ -39,7 +39,7 @@ export class App {
 
   private pixelRatio = 1;
   private maxPixelRatio = 2;
-  private readonly clock = new THREE.Clock();
+  private readonly timer = new THREE.Timer();
   private time = 0;
   private fullTimer: number | undefined;
   private fullPending = false;
@@ -51,8 +51,8 @@ export class App {
   private insets = { right: 0, bottom: 0 };
   private targetInsets = { right: 0, bottom: 0 };
   private hasTerrain = false;
-  /** 0..1 progress of the camera fly-in played when the first planet appears (-1 = idle). */
-  private intro = -1;
+  /** Camera dolly animation (fly-in on first load, gentle swoosh when switching planets). */
+  private dolly: { t: number; duration: number; curve: (t: number) => number } | null = null;
   private disposed = false;
   private paused = false;
   /** Set to render frames on demand only (e.g. for screenshots in tests). */
@@ -91,7 +91,7 @@ export class App {
     this.controls.minDistance = 1.7;
     this.controls.maxDistance = 30;
     this.controls.addEventListener('start', () => {
-      this.intro = -1;
+      this.dolly = null;
     });
 
     this.planet = new PlanetView(this.quality.defines);
@@ -105,7 +105,7 @@ export class App {
     this.generator.onResult((res, req) => {
       if (res.terrain) {
         this.planet.setTerrain(res.terrain, req.shape.heightScale, req.shape.lowPoly);
-        if (!this.hasTerrain) this.startIntro();
+        if (!this.hasTerrain) this.startDolly(2.4, (t) => 1.9 - 0.9 * (1 - Math.pow(1 - t, 3)));
         this.hasTerrain = true;
         this.events.generated?.(res.terrain);
       }
@@ -129,7 +129,7 @@ export class App {
       // Render-target contents (e.g. the baked nebula) are lost with the context.
       this.space.build(this.renderer, this.scene, this.params.seed, true);
       this.paused = document.hidden;
-      this.clock.getDelta();
+      this.timer.reset();
     });
     this.pixelRatio = Math.min(window.devicePixelRatio || 1, this.quality.maxPixelRatio);
     this.onResize();
@@ -137,15 +137,14 @@ export class App {
   }
 
   start(): void {
-    this.clock.start();
-    this.renderer.setAnimationLoop(() => this.frame());
+    this.timer.connect(document);
+    this.renderer.setAnimationLoop((t) => this.frame(t));
   }
 
   /** Render a single frame immediately (used for screenshots). */
   renderOnce(dt = 0): void {
-    if (this.intro >= 0) {
-      this.animateIntro(10);
-    }
+    this.animateDolly(1e3);
+    this.updateDetailBoost();
     if (this.insets.right !== this.targetInsets.right || this.insets.bottom !== this.targetInsets.bottom) {
       this.insets = { ...this.targetInsets };
       this.applyView();
@@ -165,40 +164,47 @@ export class App {
     return this.generator.busy || this.fullPending;
   }
 
-  private frame(): void {
+  private frame(timestamp: number): void {
     if (this.disposed || this.paused) return;
-    const dt = Math.min(this.clock.getDelta(), 0.1);
+    this.timer.update(timestamp);
+    const dt = Math.min(this.timer.getDelta(), 0.1);
     if (this.manualFrames) return;
     this.time += dt;
     this.animateInsets(dt);
-    this.animateIntro(dt);
+    this.animateDolly(dt);
+    this.updateDetailBoost();
     this.planet.update(this.time, dt);
     this.controls.update();
     this.post.render(this.scene, this.camera, dt);
     this.adaptResolution(dt);
   }
 
-  /** Gentle fly-in: the camera eases from far away to its framed distance. */
-  private animateIntro(dt: number): void {
-    if (this.intro < 0) return;
-    const prev = this.introFactor(this.intro);
-    this.intro = Math.min(1, this.intro + dt / 2.4);
-    const next = this.introFactor(this.intro);
-    const offset = this.camera.position.clone().sub(this.controls.target);
-    offset.multiplyScalar(next / prev);
-    this.camera.position.copy(this.controls.target).add(offset);
-    if (this.intro >= 1) this.intro = -1;
+  /** Scale the camera distance by curve(t) over `duration` seconds (curve(1) must be 1). */
+  private startDolly(duration: number, curve: (t: number) => number): void {
+    if (this.dolly) this.animateDolly(1e3); // finish any running dolly first
+    this.scaleCameraDistance(curve(0));
+    this.dolly = { t: 0, duration, curve };
   }
 
-  private startIntro(): void {
-    this.intro = 0;
-    const offset = this.camera.position.clone().sub(this.controls.target).multiplyScalar(this.introFactor(0));
+  private animateDolly(dt: number): void {
+    const d = this.dolly;
+    if (!d) return;
+    const prev = d.curve(d.t);
+    d.t = Math.min(1, d.t + dt / d.duration);
+    this.scaleCameraDistance(d.curve(d.t) / prev);
+    if (d.t >= 1) this.dolly = null;
+  }
+
+  private scaleCameraDistance(factor: number): void {
+    const offset = this.camera.position.clone().sub(this.controls.target).multiplyScalar(factor);
     this.camera.position.copy(this.controls.target).add(offset);
   }
 
-  private introFactor(t: number): number {
-    const e = 1 - Math.pow(1 - t, 3);
-    return 1.9 - 0.9 * e;
+  /** More cloud/terrain octaves when the camera is close to the surface. */
+  private updateDetailBoost(): void {
+    const dist = this.camera.position.distanceTo(this.controls.target);
+    const boost = this.quality.level === 'low' ? 0 : dist < 2.5 ? 2 : dist < 3.5 ? 1 : 0;
+    this.planet.uniforms.uDetailBoost.value = boost;
   }
 
   /** Reserve screen space (px) covered by UI so the planet stays centred in the visible area. */
@@ -255,6 +261,9 @@ export class App {
       if ((prev.rings > 0) !== (next.rings > 0) || changed.includes('ringOuter')) this.frameCamera(false);
     }
 
+    if (this.hasTerrain && (changed.includes('seed') || changed.includes('preset'))) {
+      this.startDolly(1.1, (t) => 1 + 0.14 * Math.sin(Math.PI * t) * (1 - 0.3 * t));
+    }
     if (shape) this.regenerate({ terrain: true, moons }, true);
     else if (moons) this.regenerate({ terrain: false, moons: true }, false);
     else if (soft) this.scheduleFull({ terrain: true, moons: false }, 350);
@@ -308,7 +317,7 @@ export class App {
 
   private readonly onVisibility = () => {
     this.paused = document.hidden;
-    if (!this.paused) this.clock.getDelta();
+    if (!this.paused) this.timer.reset();
   };
 
   private readonly onResize = () => {
@@ -355,8 +364,9 @@ export class App {
     const now = performance.now();
     if (now - this.lastAdapt < 2500) return;
     let next = this.pixelRatio;
-    if (avg > 1 / 40 && this.pixelRatio > 0.75) next = Math.max(0.75, this.pixelRatio - 0.25);
-    else if (avg < 1 / 58 && this.pixelRatio < this.maxPixelRatio) next = Math.min(this.maxPixelRatio, this.pixelRatio + 0.25);
+    // Thresholds tolerate 30 Hz display caps (e.g. iOS Low Power Mode) without degrading resolution.
+    if (avg > 1 / 28 && this.pixelRatio > 0.75) next = Math.max(0.75, this.pixelRatio - 0.25);
+    else if (avg < 1 / 55 && this.pixelRatio < this.maxPixelRatio) next = Math.min(this.maxPixelRatio, this.pixelRatio + 0.25);
     if (next !== this.pixelRatio) {
       this.pixelRatio = next;
       this.lastAdapt = now;
@@ -379,6 +389,7 @@ export class App {
   dispose(): void {
     this.disposed = true;
     this.renderer.setAnimationLoop(null);
+    this.timer.dispose();
     window.removeEventListener('resize', this.onResize);
     document.removeEventListener('visibilitychange', this.onVisibility);
     this.generator.dispose();

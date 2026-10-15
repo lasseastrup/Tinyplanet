@@ -5,10 +5,12 @@ import type { QualityDefines } from '../quality';
 
 const VERT = /* glsl */ `
 attribute vec4 aData;
+attribute float aAO;
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
 varying vec3 vLocalPos;
 varying vec4 vData;
+varying float vAO;
 
 void main() {
   vec4 wp = modelMatrix * vec4(position, 1.0);
@@ -16,6 +18,7 @@ void main() {
   vWorldNormal = normalize(mat3(modelMatrix) * normal);
   vLocalPos = position;
   vData = aData;
+  vAO = aAO;
   gl_Position = projectionMatrix * viewMatrix * wp;
 }
 `;
@@ -41,6 +44,7 @@ varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
 varying vec3 vLocalPos;
 varying vec4 vData;
+varying float vAO;
 
 void main() {
   vec3 up = normalize(vWorldPos - uPlanetCenter);
@@ -56,6 +60,8 @@ void main() {
   vec3 np = vLocalPos * 21.0;
   float n1 = snoise(np);
   float n2 = snoise(np * 2.9 + 13.0);
+  // Extra micro detail when the camera is close.
+  if (uDetailBoost > 0.5) n2 = n2 * 0.7 + snoise(np * 8.1 - 3.0) * 0.45;
 #endif
   float nd = n1 * 0.65 + n2 * 0.35;
   float slope = 1.0 - max(dot(N, up), 0.0);
@@ -130,7 +136,8 @@ void main() {
   vec3 toPlanet = normalize(uPlanetCenter - vWorldPos);
   ambient = uAmbient * 0.25 + vec3(0.03, 0.045, 0.07) * max(dot(N, toPlanet), 0.0);
 #endif
-  vec3 col = albedo * (sunLight * diff + ambient);
+  // Baked cavity occlusion: darker valleys, slightly brighter ridges.
+  vec3 col = albedo * (sunLight * diff * mix(1.0, vAO, 0.45) + ambient * vAO);
 
   vec3 V = normalize(cameraPosition - vWorldPos);
   vec3 H = normalize(L + V);

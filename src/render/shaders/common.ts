@@ -7,6 +7,7 @@ export const COMMON_GLSL = /* glsl */ `
 #define PI 3.14159265359
 
 uniform float uTime;
+uniform float uDetailBoost;
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform vec3 uAmbient;

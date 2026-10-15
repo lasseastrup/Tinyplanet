@@ -17,6 +17,7 @@ const DEG = Math.PI / 180;
 export interface SharedUniforms {
   [name: string]: THREE.IUniform;
   uTime: THREE.IUniform<number>;
+  uDetailBoost: THREE.IUniform<number>;
   uSunDir: THREE.IUniform<THREE.Vector3>;
   uSunColor: THREE.IUniform<THREE.Color>;
   uAmbient: THREE.IUniform<THREE.Color>;
@@ -56,6 +57,7 @@ export interface SharedUniforms {
 function createSharedUniforms(): SharedUniforms {
   return {
     uTime: { value: 0 },
+    uDetailBoost: { value: 0 },
     uSunDir: { value: new THREE.Vector3(1, 0, 0) },
     uSunColor: { value: new THREE.Color(1, 1, 1) },
     uAmbient: { value: new THREE.Color(0.02, 0.03, 0.05) },
@@ -489,6 +491,7 @@ export function meshToGeometry(mesh: MeshData): THREE.BufferGeometry {
   g.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
   g.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3));
   g.setAttribute('aData', new THREE.BufferAttribute(mesh.data, 4));
+  g.setAttribute('aAO', new THREE.BufferAttribute(mesh.ao, 1));
   if (mesh.indices) g.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
   g.computeBoundingSphere();
   if (g.boundingSphere) g.boundingSphere.radius *= 1.05;
