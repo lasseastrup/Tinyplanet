@@ -7,12 +7,18 @@ const VERT = /* glsl */ `
 uniform float uRadius;
 varying vec3 vWorldPos;
 varying vec3 vLocalDir;
+#ifdef FLAT_SHADED
+flat varying vec3 vFaceDir;
+#endif
 
 void main() {
   vec3 dir = normalize(position);
   vec4 wp = modelMatrix * vec4(dir * uRadius, 1.0);
   vWorldPos = wp.xyz;
   vLocalDir = dir;
+#ifdef FLAT_SHADED
+  vFaceDir = dir;
+#endif
   gl_Position = projectionMatrix * viewMatrix * wp;
 }
 `;
@@ -27,9 +33,17 @@ uniform float uLayerOpacity;
 
 varying vec3 vWorldPos;
 varying vec3 vLocalDir;
+#ifdef FLAT_SHADED
+flat varying vec3 vFaceDir;
+#endif
 
 void main() {
+#ifdef FLAT_SHADED
+  // One density sample per triangle: chunky, toy-like clouds.
+  vec3 dir = normalize(vFaceDir);
+#else
   vec3 dir = normalize(vLocalDir);
+#endif
 #ifdef CIRRUS
   // Sparse, high streaks stretched along the wind (east-west), only in some regions.
   vec3 q = dir * uCloudScale * 0.8 + uCloudOffset * 1.3;
@@ -45,13 +59,21 @@ void main() {
   float d = dd.x;
   float dSmooth = dd.y;
 #endif
+#ifdef FLAT_SHADED
+  d = step(0.35, d);
+  dSmooth = d;
+#endif
   if (d < 0.004) discard;
 
   vec3 up = normalize(vWorldPos - uPlanetCenter);
   // Thin wisps are lit almost flat (light diffuses through them); thick clouds get relief.
   float thickness = smoothstep(0.15, 0.85, d);
   vec3 N = up;
-#ifndef CIRRUS
+#if defined(FLAT_SHADED)
+  N = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
+  if (dot(N, up) < 0.0) N = -N;
+  thickness = 0.6;
+#elif !defined(CIRRUS)
   N = normalize(mix(up, perturbNormal(vWorldPos, up, dSmooth * 0.016), thickness));
 #endif
   vec3 L = uSunDir;

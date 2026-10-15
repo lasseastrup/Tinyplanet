@@ -133,7 +133,8 @@ export class UI {
     this.mobile.addEventListener('change', () => this.updateInsets());
     window.addEventListener('resize', () => this.updateInsets());
 
-    this.panelOpen = !this.mobile.matches;
+    // Open by default only where there's room for both the planet and the panel.
+    this.panelOpen = !this.mobile.matches && window.innerWidth >= 1000 && window.innerHeight >= 560;
     this.selectTab(this.activeTab);
     this.setPanelOpen(this.panelOpen);
     this.refresh(app.params);

@@ -134,6 +134,8 @@ export class PlanetView {
   private auroraSeed = -1;
   private stormSeed = -1;
 
+  private readonly cloudGeo: THREE.BufferGeometry;
+  private readonly cloudGeoLowPoly: THREE.BufferGeometry;
   private moons: MoonInstance[] = [];
   private params: PlanetParams | null = null;
   private meshHeightScale = 0.06;
@@ -181,6 +183,8 @@ export class PlanetView {
     this.spin.add(this.terrain, this.ocean);
 
     const sphere = sphereGeometry(40);
+    this.cloudGeo = sphere;
+    this.cloudGeoLowPoly = sphereGeometry(18);
     this.clouds = new THREE.Mesh(sphere, this.cloudMat);
     this.clouds.name = 'Clouds';
     this.clouds.renderOrder = 3;
@@ -245,6 +249,8 @@ export class PlanetView {
     this.flat = flat;
     setDefine(this.terrainMat, 'FLAT_SHADED', flat);
     setDefine(this.oceanMat, 'FLAT_SHADED', flat);
+    setDefine(this.cloudMat, 'FLAT_SHADED', flat);
+    this.clouds.geometry = flat ? this.cloudGeoLowPoly : this.cloudGeo;
   }
 
   setQuality(quality: QualityDefines): void {
@@ -355,7 +361,7 @@ export class PlanetView {
     this.cirrusMat.uniforms.uCirrus.value = p.cirrus;
     this.cirrusMat.uniforms.uLayerOpacity.value = 0.5;
     this.clouds.visible = p.cloudCoverage > 0.001 && p.cloudOpacity > 0.001;
-    this.cirrus.visible = p.cirrus > 0.001 && p.cloudOpacity > 0.001;
+    this.cirrus.visible = p.cirrus > 0.001 && p.cloudOpacity > 0.001 && !this.flat;
     if (this.stormSeed !== p.seed) {
       this.stormSeed = p.seed;
       const rng = new Rng(mixSeed(p.seed, 0x5707));
@@ -457,7 +463,8 @@ export class PlanetView {
 
   dispose(): void {
     this.terrain.geometry.dispose();
-    this.clouds.geometry.dispose();
+    this.cloudGeo.dispose();
+    this.cloudGeoLowPoly.dispose();
     this.ringBack.geometry.dispose();
     this.aurora.geometry.dispose();
     for (const m of this.moons) m.mesh.geometry.dispose();

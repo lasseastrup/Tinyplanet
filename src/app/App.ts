@@ -51,6 +51,8 @@ export class App {
   private insets = { right: 0, bottom: 0 };
   private targetInsets = { right: 0, bottom: 0 };
   private hasTerrain = false;
+  /** 0..1 progress of the camera fly-in played when the first planet appears (-1 = idle). */
+  private intro = -1;
   private disposed = false;
   private paused = false;
   /** Set to render frames on demand only (e.g. for screenshots in tests). */
@@ -88,6 +90,9 @@ export class App {
     this.controls.zoomSpeed = 0.9;
     this.controls.minDistance = 1.7;
     this.controls.maxDistance = 30;
+    this.controls.addEventListener('start', () => {
+      this.intro = -1;
+    });
 
     this.planet = new PlanetView(this.quality.defines);
     this.scene.add(this.planet.root);
@@ -100,6 +105,7 @@ export class App {
     this.generator.onResult((res, req) => {
       if (res.terrain) {
         this.planet.setTerrain(res.terrain, req.shape.heightScale, req.shape.lowPoly);
+        if (!this.hasTerrain) this.startIntro();
         this.hasTerrain = true;
         this.events.generated?.(res.terrain);
       }
@@ -137,6 +143,9 @@ export class App {
 
   /** Render a single frame immediately (used for screenshots). */
   renderOnce(dt = 0): void {
+    if (this.intro >= 0) {
+      this.animateIntro(10);
+    }
     if (this.insets.right !== this.targetInsets.right || this.insets.bottom !== this.targetInsets.bottom) {
       this.insets = { ...this.targetInsets };
       this.applyView();
@@ -162,10 +171,34 @@ export class App {
     if (this.manualFrames) return;
     this.time += dt;
     this.animateInsets(dt);
+    this.animateIntro(dt);
     this.planet.update(this.time, dt);
     this.controls.update();
     this.post.render(this.scene, this.camera, dt);
     this.adaptResolution(dt);
+  }
+
+  /** Gentle fly-in: the camera eases from far away to its framed distance. */
+  private animateIntro(dt: number): void {
+    if (this.intro < 0) return;
+    const prev = this.introFactor(this.intro);
+    this.intro = Math.min(1, this.intro + dt / 2.4);
+    const next = this.introFactor(this.intro);
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    offset.multiplyScalar(next / prev);
+    this.camera.position.copy(this.controls.target).add(offset);
+    if (this.intro >= 1) this.intro = -1;
+  }
+
+  private startIntro(): void {
+    this.intro = 0;
+    const offset = this.camera.position.clone().sub(this.controls.target).multiplyScalar(this.introFactor(0));
+    this.camera.position.copy(this.controls.target).add(offset);
+  }
+
+  private introFactor(t: number): number {
+    const e = 1 - Math.pow(1 - t, 3);
+    return 1.9 - 0.9 * e;
   }
 
   /** Reserve screen space (px) covered by UI so the planet stays centred in the visible area. */

@@ -49,7 +49,11 @@ void main() {
   vec3 L = uSunDir;
   float sunDot = dot(up, L);
   float dayMask = smoothstep(-0.07, 0.12, sunDot);
+#ifdef FLAT_SHADED
+  float shadow = ringShadow(vWorldPos) * moonShadow(vWorldPos);
+#else
   float shadow = cloudShadow(vWorldPos) * ringShadow(vWorldPos) * moonShadow(vWorldPos);
+#endif
   vec3 sunLight = uSunColor * sunTransmittance(vWorldPos) * dayMask * shadow;
   vec3 ambient = uAmbient * (0.12 + 0.88 * smoothstep(-0.25, 0.5, sunDot));
   float NdotL = max(sunDot, 0.0);
@@ -96,7 +100,12 @@ void main() {
 #endif
 
   // Water body colour: absorption with depth.
+#ifdef FLAT_SHADED
+  // Two clean tones (coastal shelf / open sea) suit the faceted look better than gradients.
+  float deepT = smoothstep(0.03, 0.09, dz);
+#else
   float deepT = 1.0 - exp(-dz * 7.0);
+#endif
   vec3 water = mix(uShallow, uDeep, deepT);
   vec3 col = water * (sunLight * (0.3 + 0.7 * NdotL) + ambient);
 
@@ -117,8 +126,12 @@ void main() {
   col += sunLight * min(spec, 60.0);
 
   // Shoreline foam.
+#ifdef FLAT_SHADED
+  float alpha = mix(0.82, 1.0, deepT);
+#else
   float alpha = 1.0 - exp(-dz * mix(42.0, 5.0, uClarity));
   alpha = max(alpha, fres * 0.9);
+#endif
   if (uFoam > 0.001) {
     float zone = 1.0 - smoothstep(0.0, 0.02, dz);
     if (zone > 0.0) {

@@ -88,7 +88,11 @@ void main() {
   albedo = mix(albedo, uRockColor * (0.85 + 0.3 * (n1 * 0.5 + 0.5)), rockAmt);
 
   if (uHasOcean > 0.5) {
+#ifdef FLAT_SHADED
+    float beach = 1.0 - smoothstep(0.0, 0.02, elev);
+#else
     float beach = 1.0 - smoothstep(0.012, 0.045, elev + nd * 0.012);
+#endif
     albedo = mix(albedo, uSandColor, beach * (1.0 - rockAmt * 0.7));
   }
 
@@ -115,7 +119,7 @@ void main() {
 #ifdef MOON
   shadow *= sphereShadow(vWorldPos, uPlanetCenter, uPlanetRadius, 0.01);
   dayMask = smoothstep(-0.02, 0.06, sunDot);
-#else
+#elif !defined(FLAT_SHADED)
   shadow *= cloudShadow(vWorldPos);
 #endif
   vec3 sunLight = uSunColor * sunTransmittance(vWorldPos) * dayMask * shadow;

@@ -82,7 +82,7 @@ void main() {
   float d = length(vUv);
   float disc = 1.0 - smoothstep(0.06, 0.075, d);
   float glow = exp(-d * 7.0) * 0.9 + exp(-d * 22.0) * 3.0;
-  float rays = pow(max(0.0, 1.0 - abs(vUv.x * vUv.y) * 90.0), 6.0) * exp(-d * 4.0) * 0.5;
+  float rays = pow(max(0.0, 1.0 - abs(vUv.x * vUv.y) * 60.0), 8.0) * exp(-d * 9.0) * 0.6;
   vec3 col = uSunColor * (disc * 28.0 + glow + rays);
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>

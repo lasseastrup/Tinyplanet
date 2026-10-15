@@ -715,3 +715,47 @@
     animation: none;
   }
 }
+
+/* iOS zooms into inputs with font-size < 16px */
+@media (max-width: 760px) {
+  .seed-input {
+    font-size: 16px;
+  }
+}
+
+/* Landscape phones: compact chrome */
+@media (max-height: 520px) {
+  .planet-name {
+    font-size: 24px;
+  }
+  .subtitle {
+    display: none;
+  }
+  .bottombar {
+    flex-direction: row;
+    justify-content: center;
+    gap: 8px;
+    padding-bottom: calc(10px + var(--safe-bottom));
+  }
+  .presets {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .preset {
+    padding: 4px 10px 4px 4px;
+  }
+  .preset-dot {
+    width: 22px;
+    height: 22px;
+  }
+  .dice-btn {
+    flex: none;
+    padding: 10px;
+  }
+  .dice-btn span {
+    display: none;
+  }
+  .toast {
+    bottom: calc(70px + var(--safe-bottom));
+  }
+}
