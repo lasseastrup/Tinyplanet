@@ -1,0 +1,86 @@
+:root {
+  color-scheme: dark;
+  --bg: #04050b;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: #eef1ff;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+#viewport {
+  position: fixed;
+  inset: 0;
+}
+.planet-canvas {
+  display: block;
+  touch-action: none;
+  outline: none;
+}
+
+.planet-canvas {
+  opacity: 0;
+  transition: opacity 1.1s ease;
+}
+body.ready .planet-canvas {
+  opacity: 1;
+}
+#loader {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 18px;
+  pointer-events: none;
+  transition: opacity 0.8s ease;
+}
+#loader.done {
+  opacity: 0;
+}
+.loader-orb {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, #bfe0ff 0%, #6f8dff 38%, #2a2a6a 75%, #0b0b22 100%);
+  box-shadow: 0 0 40px rgba(120, 150, 255, 0.45), 0 0 120px rgba(150, 120, 255, 0.25);
+  animation: orb 2.4s ease-in-out infinite;
+}
+.loader-text {
+  font-family: ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: rgba(226, 232, 255, 0.6);
+}
+@keyframes orb {
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 60px rgba(120, 150, 255, 0.6), 0 0 160px rgba(150, 120, 255, 0.3);
+  }
+}
+.ui button {
+  touch-action: manipulation;
+}
+
+.unsupported {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  padding: 24px;
+  color: rgba(226, 232, 255, 0.8);
+  line-height: 1.5;
+}
+.unsupported h1 {
+  font-family: ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
+  margin: 0 0 8px;
+}
