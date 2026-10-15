@@ -3,8 +3,8 @@ import { Rng, mixSeed } from '../core/rng';
 import { buildBiomeLut, biomeLutKey, LUT_SIZE } from '../planet/biomes';
 import type { MeshData, MoonResult, TerrainResult } from '../planet/generator';
 import { buildIcosphere } from '../planet/icosphere';
-import type { PlanetParams } from '../planet/params';
-import { placePuffs, PROP_KINDS, type PropKind, type PropSet } from '../planet/props';
+import { propScale, type PlanetParams } from '../planet/params';
+import { placePuffs, PROP_KINDS, PROP_VARIANTS, type PropPlacement, type PropSet } from '../planet/props';
 import { buildRingProfile, RING_TEX_SIZE } from '../planet/rings';
 import { createAuroraGeometry, createAuroraMaterial } from './materials/aurora';
 import { createCloudMaterial } from './materials/clouds';
@@ -14,6 +14,7 @@ import { createRingGeometry, createRingMaterial } from './materials/rings';
 import { createTerrainMaterial } from './materials/terrain';
 import { cloudPuffGeometry, propGeometry, propMatrix, shadowGeometry } from './propGeometry';
 import type { QualityDefines } from './quality';
+import { SHADOW_LAYER, SunShadow } from './SunShadow';
 
 const DEG = Math.PI / 180;
 
@@ -24,6 +25,7 @@ export interface SharedUniforms {
   uSunDir: THREE.IUniform<THREE.Vector3>;
   uSunColor: THREE.IUniform<THREE.Color>;
   uAmbient: THREE.IUniform<THREE.Color>;
+  uSkyLight: THREE.IUniform<THREE.Color>;
   uPlanetCenter: THREE.IUniform<THREE.Vector3>;
   uPlanetRadius: THREE.IUniform<number>;
   uAtmoOn: THREE.IUniform<number>;
@@ -55,6 +57,9 @@ export interface SharedUniforms {
   uRingTex: THREE.IUniform<THREE.Texture | null>;
   uMoonCount: THREE.IUniform<number>;
   uMoons: THREE.IUniform<THREE.Vector4[]>;
+  uShadowMap: THREE.IUniform<THREE.Texture | null>;
+  uShadowMatrix: THREE.IUniform<THREE.Matrix4>;
+  uShadowTexel: THREE.IUniform<THREE.Vector2>;
 }
 
 function createSharedUniforms(): SharedUniforms {
@@ -64,6 +69,7 @@ function createSharedUniforms(): SharedUniforms {
     uSunDir: { value: new THREE.Vector3(1, 0, 0) },
     uSunColor: { value: new THREE.Color(1, 1, 1) },
     uAmbient: { value: new THREE.Color(0.02, 0.03, 0.05) },
+    uSkyLight: { value: new THREE.Color(0.1, 0.12, 0.16) },
     uPlanetCenter: { value: new THREE.Vector3() },
     uPlanetRadius: { value: 1 },
     uAtmoOn: { value: 1 },
@@ -95,6 +101,9 @@ function createSharedUniforms(): SharedUniforms {
     uRingTex: { value: null },
     uMoonCount: { value: 0 },
     uMoons: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
+    uShadowMap: { value: null },
+    uShadowMatrix: { value: new THREE.Matrix4() },
+    uShadowTexel: { value: new THREE.Vector2(1 / 1024, 0.002) },
   };
 }
 
@@ -134,11 +143,16 @@ export class PlanetView {
   private readonly propMat: THREE.ShaderMaterial;
   private readonly puffMat: THREE.ShaderMaterial;
   private readonly shadowMat: THREE.ShaderMaterial;
+  private sunShadow: SunShadow | null = null;
+  /** Frames since the shadow map was drawn, and the sun direction it was drawn for. */
+  private shadowAge = Infinity;
+  private readonly shadowSun = new THREE.Vector3();
 
-  private readonly propGeos = new Map<PropKind, THREE.BufferGeometry>();
-  private readonly propMeshes = new Map<PropKind, THREE.InstancedMesh>();
-  private readonly shadowGeos = new Map<PropKind, THREE.BufferGeometry>();
-  private readonly shadowMeshes = new Map<PropKind, THREE.InstancedMesh>();
+  /** Prop models, meshes and contact shadows keyed by "kind:variant". */
+  private readonly propGeos = new Map<string, THREE.BufferGeometry>();
+  private readonly propMeshes = new Map<string, THREE.InstancedMesh>();
+  private readonly shadowGeos = new Map<string, THREE.BufferGeometry>();
+  private readonly shadowMeshes = new Map<string, THREE.InstancedMesh>();
   private readonly puffGeo: THREE.BufferGeometry;
   private puffs: THREE.InstancedMesh | null = null;
   private puffKey = '';
@@ -195,8 +209,10 @@ export class PlanetView {
     this.puffMat = createPropMaterial(u, quality, { puff: true });
     this.shadowMat = createPropShadowMaterial(u);
     for (const kind of PROP_KINDS) {
-      this.propGeos.set(kind, propGeometry(kind));
-      this.shadowGeos.set(kind, shadowGeometry(kind));
+      for (let v = 0; v < PROP_VARIANTS[kind]; v++) {
+        this.propGeos.set(`${kind}:${v}`, propGeometry(kind, v));
+        this.shadowGeos.set(`${kind}:${v}`, shadowGeometry(kind, v));
+      }
     }
     this.puffGeo = cloudPuffGeometry();
 
@@ -207,6 +223,8 @@ export class PlanetView {
     this.ocean.name = 'Ocean';
     this.ocean.renderOrder = 1;
     this.spin.add(this.terrain, this.ocean);
+    this.terrain.layers.enable(SHADOW_LAYER);
+    this.configureShadows(quality);
 
     const sphere = sphereGeometry(40);
     this.cloudGeo = sphere;
@@ -240,6 +258,7 @@ export class PlanetView {
 
   /** Swap in a freshly generated terrain mesh. */
   setTerrain(result: TerrainResult, heightScale: number, lowPoly: boolean): void {
+    this.shadowAge = Infinity;
     const old = this.terrain.geometry;
     const g = meshToGeometry(result.mesh);
     this.terrain.geometry = g;
@@ -280,41 +299,72 @@ export class PlanetView {
     this.clouds.geometry = flat ? this.cloudGeoLowPoly : this.cloudGeo;
   }
 
-  /** Show trees, rocks and houses (positions in planet-local space). */
-  setProps(sets: PropSet[]): void {
+  /** Show trees, rocks and villages (positions in planet-local space). */
+  setProps(placement: PropPlacement): void {
+    this.shadowAge = Infinity;
+    const sets = placement.sets;
     this.propSets = sets;
+    // Village squares and fields are painted by the terrain shader.
+    const tu = this.terrainMat.uniforms;
+    const sites = placement.villages.slice(0, MAX_VILLAGES);
+    sites.forEach((v, i) => (tu.uVillages.value as THREE.Vector4[])[i].set(v.dir[0], v.dir[1], v.dir[2], v.radius));
+    tu.uVillageCount.value = sites.length;
     for (const set of sets) {
-      let mesh = this.propMeshes.get(set.kind);
-      if (!mesh || mesh.instanceMatrix.count < set.count) {
-        if (mesh) {
-          this.spin.remove(mesh);
-          mesh.dispose();
-        }
-        const capacity = Math.max(64, Math.ceil(set.count * 1.25));
-        mesh = new THREE.InstancedMesh(this.propGeos.get(set.kind)!, this.propMat, capacity);
-        mesh.name = `Props_${set.kind}`;
-        this.propMeshes.set(set.kind, mesh);
-        this.spin.add(mesh);
-      }
-      writeInstances(mesh, set);
-
-      // Contact shadows share the props' instance matrices.
-      let shadow = this.shadowMeshes.get(set.kind);
-      if (!shadow || shadow.instanceMatrix !== mesh.instanceMatrix) {
-        if (shadow) {
-          this.spin.remove(shadow);
-          shadow.dispose();
-        }
-        shadow = new THREE.InstancedMesh(this.shadowGeos.get(set.kind)!, this.shadowMat, 1);
-        shadow.instanceMatrix = mesh.instanceMatrix;
-        shadow.name = `PropShadows_${set.kind}`;
-        shadow.frustumCulled = false;
-        this.shadowMeshes.set(set.kind, shadow);
-        this.spin.add(shadow);
-      }
-      shadow.count = mesh.count;
-      shadow.visible = mesh.visible;
+      const byVariant: number[][] = Array.from({ length: PROP_VARIANTS[set.kind] }, () => []);
+      for (let i = 0; i < set.count; i++) byVariant[Math.min(byVariant.length - 1, set.variants[i])].push(i);
+      byVariant.forEach((indices, v) => this.updatePropMesh(set, v, indices));
     }
+  }
+
+  private updatePropMesh(set: PropSet, variant: number, indices: number[]): void {
+    const key = `${set.kind}:${variant}`;
+    const geo = this.propGeos.get(key)!;
+    let mesh = this.propMeshes.get(key);
+    if (!mesh || mesh.instanceMatrix.count < indices.length) {
+      if (mesh) {
+        this.spin.remove(mesh);
+        mesh.dispose();
+      }
+      const capacity = Math.max(32, Math.ceil(indices.length * 1.25));
+      // The per-instance secondary colour (trunks, walls) lives on the geometry; free the old
+      // buffers before swapping in a bigger one (they are re-uploaded on the next draw).
+      geo.dispose();
+      geo.setAttribute('aTint2', new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3));
+      mesh = new THREE.InstancedMesh(geo, this.propMat, capacity);
+      mesh.name = `Props_${set.kind}${variant}`;
+      mesh.layers.enable(SHADOW_LAYER);
+      this.propMeshes.set(key, mesh);
+      this.spin.add(mesh);
+    }
+    const tint2 = geo.getAttribute('aTint2') as THREE.InstancedBufferAttribute;
+    indices.forEach((i, k) => {
+      mesh.setMatrixAt(k, propMatrix(set, i, tmpM));
+      mesh.setColorAt(k, tmpC.setRGB(set.colors[i * 3], set.colors[i * 3 + 1], set.colors[i * 3 + 2]));
+      tint2.setXYZ(k, set.colors2[i * 3], set.colors2[i * 3 + 1], set.colors2[i * 3 + 2]);
+    });
+    mesh.count = indices.length;
+    mesh.visible = indices.length > 0;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    tint2.needsUpdate = true;
+    mesh.computeBoundingSphere();
+
+    // Contact shadows share the props' instance matrices.
+    let shadow = this.shadowMeshes.get(key);
+    if (!shadow || shadow.instanceMatrix !== mesh.instanceMatrix) {
+      if (shadow) {
+        this.spin.remove(shadow);
+        shadow.dispose();
+      }
+      shadow = new THREE.InstancedMesh(this.shadowGeos.get(key)!, this.shadowMat, 1);
+      shadow.instanceMatrix = mesh.instanceMatrix;
+      shadow.name = `PropShadows_${set.kind}${variant}`;
+      shadow.frustumCulled = false;
+      this.shadowMeshes.set(key, shadow);
+      this.spin.add(shadow);
+    }
+    shadow.count = mesh.count;
+    shadow.visible = mesh.visible;
   }
 
   get propMeshList(): THREE.InstancedMesh[] {
@@ -342,6 +392,7 @@ export class PlanetView {
         }
         this.puffs = new THREE.InstancedMesh(this.puffGeo, this.puffMat, Math.max(64, set.count));
         this.puffs.name = 'CloudPuffs';
+        this.puffs.layers.enable(SHADOW_LAYER);
         this.cloudPivot.add(this.puffs);
       }
       writeInstances(this.puffs, set);
@@ -355,6 +406,48 @@ export class PlanetView {
       Object.assign(m.defines, quality);
       m.needsUpdate = true;
     }
+    this.configureShadows(quality);
+  }
+
+  private configureShadows(quality: QualityDefines): void {
+    const size = quality.SUN_SHADOWS >= 2 ? 2048 : quality.SUN_SHADOWS >= 1 ? 1024 : 0;
+    if (size === 0) {
+      this.sunShadow?.dispose();
+      this.sunShadow = null;
+    } else if (this.sunShadow) {
+      this.sunShadow.setSize(size);
+    } else {
+      this.sunShadow = new SunShadow(size);
+    }
+    this.uniforms.uShadowMap.value = this.sunShadow ? this.sunShadow.texture : null;
+    this.shadowAge = Infinity;
+    // With real shadows the contact discs only darken where props meet the ground.
+    this.shadowMat.uniforms.uOffset.value = size ? 0 : 0.35;
+    this.shadowMat.uniforms.uStrength.value = size ? 0.4 : 0.75;
+  }
+
+  /**
+   * Render the sun's shadow map; call once per frame after update() and before the main render.
+   * The planet turns slowly, so the smaller (mobile) map is only refreshed every other frame
+   * unless the sun, terrain or props changed.
+   */
+  renderShadows(renderer: THREE.WebGLRenderer, scene: THREE.Scene): void {
+    const sh = this.sunShadow;
+    const p = this.params;
+    if (!sh || !p) return;
+    const u = this.uniforms;
+    const interval = sh.mapSize >= 2048 ? 1 : 2;
+    this.shadowAge++;
+    if (this.shadowAge < interval && this.shadowSun.equals(u.uSunDir.value)) return;
+    this.shadowAge = 0;
+    this.shadowSun.copy(u.uSunDir.value);
+    // Tightest sphere around every caster: terrain peaks, the tallest props and the puffy clouds.
+    const peak = 1 + Math.max(this.terrainInfo?.maxHeight ?? 1, p.seaLevel) * this.meshHeightScale;
+    let radius = peak + (p.trees + p.rocks + p.houses > 0.001 ? propScale(p.size) * 1.9 : 0);
+    if (this.puffs?.visible) radius = Math.max(radius, u.uCloudRadius.value + 0.05);
+    sh.render(renderer, scene, u.uPlanetCenter.value, u.uSunDir.value, radius + 0.02);
+    u.uShadowMatrix.value.copy(sh.matrix);
+    u.uShadowTexel.value.set(1 / sh.mapSize, sh.texelWorld);
   }
 
   /** Oceans sit at this radius (also the reference "ground" for the atmosphere). */
@@ -401,6 +494,12 @@ export class PlanetView {
     u.uAmbient.value
       .setRGB(0.012, 0.014, 0.02)
       .add(new THREE.Color(p.cSky).multiplyScalar(0.05 * atmoAmbient));
+    // Daylight from the sky dome (tinted by the scattering colour); airless worlds keep a little fill.
+    u.uSkyLight.value
+      .setRGB(1, 1, 1)
+      .lerp(new THREE.Color(p.cSky), 0.55)
+      .multiplyScalar((0.05 + 0.24 * atmoAmbient) * p.sunIntensity);
+    this.propMat.uniforms.uWind.value = 0.008 + 0.022 * p.cloudSpeed;
 
     // Climate
     u.uSeaLevel.value = p.seaLevel;
@@ -580,6 +679,7 @@ export class PlanetView {
     for (const m of this.propMeshes.values()) m.dispose();
     for (const m of this.shadowMeshes.values()) m.dispose();
     this.shadowMat.dispose();
+    this.sunShadow?.dispose();
     this.puffGeo.dispose();
     this.puffs?.dispose();
     this.biomeTex.dispose();
@@ -589,6 +689,7 @@ export class PlanetView {
 
 const tmpM = new THREE.Matrix4();
 const tmpC = new THREE.Color();
+const MAX_VILLAGES = 16;
 
 /** Fill an InstancedMesh from a prop set. */
 function writeInstances(mesh: THREE.InstancedMesh, set: PropSet): void {

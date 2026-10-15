@@ -22,16 +22,20 @@ phone's home screen, and exports planets for use in games.
 
 **Tiny worlds**
 
-![Tiny worlds: Pocket, a village up close, Snowglobe from low orbit](docs/tiny-worlds.jpg)
+![Tiny worlds: Pocket, a village with its fields, an island on Isle](docs/tiny-worlds.jpg)
 
 - A **World size** slider (Terrain tab) from tiny to large: on tiny worlds continents, hills and craters
   grow relative to the planet and the relief is exaggerated, so a whole world fits in one view
-- 3D props in the **Life** tab, placed by climate and biome: conifers in the cold, broadleaf forests,
-  jungle trees, cacti in deserts and rocks on slopes. Forests grow in patches with meadows between them.
-- Villages of houses gathered around a chapel, front doors facing the square, with windows that
-  light up at night
-- **Puffs** cloud style (Sky tab): low-poly cumulus clouds drifting above the surface
-- Soft contact shadows under every prop, cast away from the sun
+- 3D props in the **Life** tab, placed by climate and biome: spruces and pines in the cold, oaks,
+  birches and fruit trees in temperate forests, jungle trees, palms on tropical coasts, cacti in
+  deserts, flowering bushes along forest edges, and rocks on slopes. Forests grow in patches with
+  meadows between them, and the trees sway in the wind (the Sky tab's Wind slider).
+- Villages of cottages, long houses and two-storey town houses (framed windows, shutters, chimneys)
+  around a chapel, front doors facing a packed-earth square, surrounded by a patchwork of fields.
+  Windows light up at night.
+- **Puffs** cloud style (Sky tab): soft cumulus clouds drifting above the surface
+- Real-time sun shadows on medium and high quality: trees, houses, mountains and puffy clouds cast
+  shadows on the ground and the sea (low quality uses soft contact shadows instead)
 - Zoom in close and the camera tilts up to the horizon for a low-orbit view
 - Props stay in place when the mesh is refined or exported at another resolution
 
@@ -49,14 +53,17 @@ phone's home screen, and exports planets for use in games.
 - Sunlight reaching the surface and clouds is filtered through the atmosphere, so the terminator turns warm
 - Two cloud layers: procedural clouds with cyclone swirls, latitude bands and soft 3D shading,
   plus high cirrus. Clouds cast shadows on the ground.
-- Ocean with depth-based color, transparent shallows, animated shoreline surf, a GGX sun glint, Fresnel sky
-  reflection, sea ice and optional bioluminescence
+- Ocean with depth-based color, transparent shallows, caustics dancing on the seabed, animated
+  shoreline surf, wet sand, a GGX sun glint, rippled Fresnel sky reflection, sea ice and optional
+  bioluminescence
+- Daylight from the sky dome fills in shadows with the atmosphere's color; snow glitters up close
 - Lava oceans with drifting crust plates and glowing cracks
 - City lights on the night side (only in habitable lowlands), aurorae around the poles
 - Planetary rings with procedural bands and gaps, lit with forward scattering, with planet → ring and
   ring → planet shadows
 - Moons that cast eclipse shadows on the planet and are lit by planetshine
-- Starfield (with a galactic band), a seeded nebula sky, sun glare, HDR bloom, ACES tone mapping
+- Starfield (with a galactic band), a seeded nebula sky, sun glare, HDR bloom, ACES tone mapping and a
+  gentle color grade
 
 **App**
 - 13 curated presets: Terra, Pocket, Isle and Snowglobe (tiny worlds), Oceania, Dune, Rust, Glacia,
@@ -95,8 +102,9 @@ scene that loads in Three.js, Babylon.js, Godot, Unity (glTFast), Unreal, Blende
 
 - `Terrain`: mesh with biome colors baked into vertex colors (`COLOR_0`)
 - `Ocean`: semi-transparent water shell (vertex alpha by depth) or an emissive lava shell
-- `Props`: trees, rocks, houses and chapels, grouped by kind, one instanced mesh per material
-  (`EXT_mesh_gpu_instancing`). Foliage and roof tints are grouped into up to 6 shades each.
+- `Props`: trees, bushes, rocks, houses and chapels, grouped by kind and model variant, one instanced
+  mesh per material (`EXT_mesh_gpu_instancing`). Foliage, roof, trunk and wall tints are grouped into
+  a few shades per kind with shared materials.
 - `Clouds`: puffy clouds as instanced meshes (when the Puffs cloud style is on)
 - `Rings`: unlit textured ring (if enabled)
 - `Moon1..n`: moons at their current orbital positions
@@ -132,6 +140,7 @@ planet.applyParams(params);
 const terrain = generateTerrain(shape);
 planet.setTerrain(terrain, effectiveHeightScale(shape), shape.lowPoly);
 planet.setProps(placeProps(terrain.mesh, params, 4000)); // trees, rocks, villages (budget 4000)
+// every frame, before rendering: planet.renderShadows(renderer, scene) for sun shadows
 planet.setMoons(generateMoons(shape.seed, shape.moons, shape.lowPoly), shape.lowPoly);
 scene.add(planet.root); // move it anywhere, but keep it unscaled: the shaders work in planet radii
 
@@ -148,9 +157,10 @@ bloom and final grade, render through `PostFX` (see `src/render/PostFX.ts` and h
 also use it for collision meshes, object placement or server-side generation.
 `src/planet/colors.ts` turns that data into biome colors.
 
-`placeProps` (also DOM-free) returns one set per prop kind with planet-local positions, up and forward
-vectors, scales and tint colors, which is handy for spawning your own game objects where the trees and
-houses are. `src/render/propGeometry.ts` has the low-poly models and `propMatrix()` for instance transforms.
+`placeProps` (also DOM-free) returns `{ sets, villages }`: one set per prop kind with planet-local
+positions, up and forward vectors, scales, model variants and colors, plus the village centers, which is
+handy for spawning your own game objects where the trees and houses are. `src/render/propGeometry.ts` has
+the low-poly models and `propMatrix()` for instance transforms.
 
 ## Development
 
@@ -197,6 +207,7 @@ src/
     propGeometry.ts       procedural low-poly trees, rocks, houses, chapel and cloud puffs
     shaders/              shared GLSL (noise, scattering, shadows)
     PostFX.ts             atmosphere pass, bloom, tone mapping
+    SunShadow.ts          sun shadow map (terrain, props, puffy clouds)
     SpaceBackground.ts    stars, nebula, sun
   ui/                     panel, controls schema, icons, styles
   export/                 glTF export and file delivery

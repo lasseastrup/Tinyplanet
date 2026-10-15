@@ -11,6 +11,7 @@ uniform float uDetailBoost;
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform vec3 uAmbient;
+uniform vec3 uSkyLight;
 uniform vec3 uPlanetCenter;
 uniform float uPlanetRadius;
 
@@ -80,6 +81,44 @@ vec3 sunTransmittance(vec3 p) {
     odM += exp(-h / uScaleM);
   }
   return exp(-(uBetaR * odR + uBetaM * 1.1 * odM) * stepLen);
+}
+
+// Sun shadow map (terrain, props and puffy clouds), sampled with hardware PCF.
+#if defined(SUN_SHADOWS) && SUN_SHADOWS > 0
+uniform sampler2DShadow uShadowMap;
+uniform mat4 uShadowMatrix;
+// x: one texel in uv, y: one texel in world units
+uniform vec2 uShadowTexel;
+float sunShadowMap(vec3 p, vec3 n) {
+  vec4 sc = uShadowMatrix * vec4(p + n * uShadowTexel.y * 1.5, 1.0);
+  vec3 c = sc.xyz * 0.5 + 0.5;
+  if (c.x <= 0.0 || c.x >= 1.0 || c.y <= 0.0 || c.y >= 1.0 || c.z >= 1.0) return 1.0;
+  float z = c.z - 0.0006;
+  float o = uShadowTexel.x;
+#if SUN_SHADOWS > 1
+  float s = 0.0;
+  for (int i = -1; i <= 1; i++) {
+    for (int j = -1; j <= 1; j++) s += texture(uShadowMap, vec3(c.xy + vec2(float(i), float(j)) * o * 1.2, z));
+  }
+  return s / 9.0;
+#else
+  float s = texture(uShadowMap, vec3(c.xy + vec2(-o, -o) * 0.8, z));
+  s += texture(uShadowMap, vec3(c.xy + vec2(o, -o) * 0.8, z));
+  s += texture(uShadowMap, vec3(c.xy + vec2(-o, o) * 0.8, z));
+  s += texture(uShadowMap, vec3(c.xy + vec2(o, o) * 0.8, z));
+  return s * 0.25;
+#endif
+}
+#else
+float sunShadowMap(vec3 p, vec3 n) {
+  return 1.0;
+}
+#endif
+
+// Light from the sky dome: strongest on surfaces facing up, fading out through twilight.
+vec3 skyLight(vec3 N, vec3 up, float sunDot) {
+  float day = smoothstep(-0.18, 0.3, sunDot);
+  return uSkyLight * day * (0.55 + 0.45 * dot(N, up));
 }
 
 // Soft shadow from a sphere (c, r) for a point p lit along uSunDir.

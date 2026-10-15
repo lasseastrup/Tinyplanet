@@ -54,6 +54,7 @@ void main() {
 #else
   float shadow = cloudShadow(vWorldPos) * ringShadow(vWorldPos) * moonShadow(vWorldPos);
 #endif
+  shadow *= sunShadowMap(vWorldPos, up);
   vec3 sunLight = uSunColor * sunTransmittance(vWorldPos) * dayMask * shadow;
   vec3 ambient = uAmbient * (0.12 + 0.88 * smoothstep(-0.25, 0.5, sunDot));
   float NdotL = max(sunDot, 0.0);
@@ -94,6 +95,12 @@ void main() {
     vec3 wp2 = dir * 150.0;
     g += 0.5 * vec3(snoise(wp2 - vec3(t, 0.0, 9.0)), snoise(wp2 + vec3(4.0, -t, 0.0)), snoise(wp2 + vec3(0.0, 17.0, -t)));
 #endif
+    // Fine ripples when zoomed in.
+    if (uDetailBoost > 0.0) {
+      vec3 wp3 = dir * 420.0;
+      float t3 = t * 1.6;
+      g += 0.3 * min(uDetailBoost, 1.0) * vec3(snoise(wp3 + vec3(t3, 3.0, 0.0)), snoise(wp3 + vec3(0.0, t3, -5.0)), snoise(wp3 + vec3(11.0, 0.0, t3)));
+    }
     N = normalize(up + (g - up * dot(g, up)) * 0.03 * uWaves);
   }
 #endif
@@ -106,12 +113,16 @@ void main() {
   float deepT = 1.0 - exp(-dz * 7.0);
 #endif
   vec3 water = mix(uShallow, uDeep, deepT);
-  vec3 col = water * (sunLight * (0.3 + 0.7 * NdotL) + ambient);
+  vec3 col = water * (sunLight * (0.3 + 0.7 * NdotL) + ambient + skyLight(up, up, sunDot) * 0.5);
 
-  // Fresnel reflection of the sky.
+  // Fresnel reflection of the sky: paler towards the horizon, deeper overhead; the waves break
+  // it up into ripples.
   float NdotV = max(dot(N, V), 0.0);
-  float fres = 0.02 + 0.98 * pow(1.0 - max(dot(up, V), 0.0), 5.0);
-  col = mix(col, uSkyTint * (dayMask * 0.6 + 0.02), fres * 0.55);
+  float fres = 0.02 + 0.98 * pow(1.0 - max(dot(mix(up, N, 0.6), V), 0.0), 5.0);
+  vec3 R = reflect(-V, N);
+  float elevR = dot(R, up);
+  vec3 skyRefl = uSkyTint * mix(1.15, 0.55, smoothstep(-0.05, 0.45, elevR)) * (dayMask * 0.6 + 0.02);
+  col = mix(col, skyRefl, fres * 0.55);
 
   // Sun glint (GGX distribution, Schlick Fresnel).
   vec3 H = normalize(L + V);

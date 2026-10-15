@@ -128,6 +128,8 @@ void main() {
 const FINAL_FRAG = /* glsl */ `
 uniform sampler2D tDiffuse;
 uniform float uVignette;
+uniform float uSaturation;
+uniform float uContrast;
 uniform vec2 uResolution;
 varying vec2 vUv;
 
@@ -144,6 +146,12 @@ void main() {
   col *= 1.0 - uVignette * smoothstep(0.45, 1.25, length(q));
   gl_FragColor = vec4(max(col, 0.0), 1.0);
   #include <tonemapping_fragment>
+  // Gentle grade after tone mapping: a little more colour, a soft S-curve.
+  vec3 g = gl_FragColor.rgb;
+  float luma = dot(g, vec3(0.2126, 0.7152, 0.0722));
+  g = clamp(mix(vec3(luma), g, uSaturation), 0.0, 1.0);
+  g = mix(g, g * g * (3.0 - 2.0 * g), uContrast);
+  gl_FragColor.rgb = g;
   #include <colorspace_fragment>
   gl_FragColor.rgb += (hash12(gl_FragCoord.xy) - 0.5) / 255.0;
 }
@@ -205,6 +213,8 @@ export class PostFX {
       uniforms: {
         tDiffuse: { value: null },
         uVignette: { value: 0.35 },
+        uSaturation: { value: 1.12 },
+        uContrast: { value: 0.12 },
         uResolution: { value: new THREE.Vector2(1, 1) },
       },
       vertexShader: FULLSCREEN_VERT,

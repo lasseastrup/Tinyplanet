@@ -158,6 +158,7 @@ export class App {
     this.planet.update(this.time, dt);
     this.controls.update();
     this.applyCloseUp();
+    this.planet.renderShadows(this.renderer, this.scene);
     this.post.render(this.scene, this.camera, dt);
   }
 
@@ -182,6 +183,7 @@ export class App {
     this.planet.update(this.time, dt);
     this.controls.update();
     this.applyCloseUp();
+    this.planet.renderShadows(this.renderer, this.scene);
     this.post.render(this.scene, this.camera, dt);
     this.adaptResolution(dt);
   }
@@ -334,7 +336,7 @@ export class App {
     const dat = g.getAttribute('aData') as THREE.BufferAttribute | undefined;
     if (!pos || !nor || !dat) return;
     const index = g.getIndex();
-    const sets = placeProps(
+    const placement = placeProps(
       {
         positions: pos.array as Float32Array,
         normals: nor.array as Float32Array,
@@ -344,7 +346,7 @@ export class App {
       this.params,
       this.quality.maxProps,
     );
-    this.planet.setProps(sets);
+    this.planet.setProps(placement);
   }
 
   setQuality(level: QualityLevel): void {

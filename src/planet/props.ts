@@ -9,8 +9,20 @@ import { Simplex3 } from '../core/noise';
 import { Rng, mixSeed } from '../core/rng';
 import { propScale, type PlanetParams } from './params';
 
-export type PropKind = 'conifer' | 'broadleaf' | 'jungle' | 'cactus' | 'rock' | 'house' | 'tower';
-export const PROP_KINDS: readonly PropKind[] = ['conifer', 'broadleaf', 'jungle', 'cactus', 'rock', 'house', 'tower'];
+export type PropKind = 'conifer' | 'broadleaf' | 'jungle' | 'palm' | 'cactus' | 'bush' | 'rock' | 'house' | 'tower';
+export const PROP_KINDS: readonly PropKind[] = ['conifer', 'broadleaf', 'jungle', 'palm', 'cactus', 'bush', 'rock', 'house', 'tower'];
+/** Number of model variants per kind (see render/propGeometry.ts). */
+export const PROP_VARIANTS: Readonly<Record<PropKind, number>> = {
+  conifer: 2,
+  broadleaf: 3,
+  jungle: 2,
+  palm: 2,
+  cactus: 2,
+  bush: 2,
+  rock: 3,
+  house: 3,
+  tower: 1,
+};
 
 export interface PropSet {
   kind: PropKind;
@@ -25,6 +37,22 @@ export interface PropSet {
   scales: Float32Array;
   /** Linear RGB tint (foliage, rock or roof colour). */
   colors: Float32Array;
+  /** Linear RGB secondary tint (trunk or wall colour). */
+  colors2: Float32Array;
+  /** Model variant per instance. */
+  variants: Uint8Array;
+}
+
+/** A village: its square sits at `dir` (planet-local unit vector); fields reach about 1.5 × radius. */
+export interface VillageSite {
+  dir: [number, number, number];
+  /** Radius of the built-up area (planet radii). */
+  radius: number;
+}
+
+export interface PropPlacement {
+  sets: PropSet[];
+  villages: VillageSite[];
 }
 
 export interface SurfaceMesh {
@@ -370,12 +398,30 @@ class SpacingGrid {
   }
 }
 
+interface PushOptions {
+  /** 0 = stand along the planet radius, 1 = along the surface normal */
+  upMix: number;
+  /** how far to push the model into the ground (fraction of its scale) */
+  sink: number;
+  scale: number;
+  color: RGB;
+  /** secondary colour: trunk or walls */
+  color2?: RGB;
+  variant?: number;
+  /** rotation about up (radians); with `face`, a deviation from facing that point */
+  angle: number;
+  /** optional point the model's front (+Z) turns towards */
+  face?: Sample;
+}
+
 class SetBuilder {
   private readonly pos: number[] = [];
   private readonly up: number[] = [];
   private readonly fwd: number[] = [];
   private readonly scl: number[] = [];
   private readonly col: number[] = [];
+  private readonly col2: number[] = [];
+  private readonly vars: number[] = [];
   readonly kind: PropKind;
 
   constructor(kind: PropKind) {
@@ -386,16 +432,10 @@ class SetBuilder {
     return this.scl.length;
   }
 
-  /**
-   * @param upMix  0 = stand along the planet radius, 1 = along the surface normal
-   * @param sink   how far to push the model into the ground (fraction of its scale)
-   * @param angle  rotation about up (radians); with `face`, a deviation from facing that point
-   * @param face   optional point the model's front (+Z) turns towards
-   */
-  push(s: Sample, upMix: number, sink: number, scale: number, color: RGB, angle: number, face?: Sample): void {
-    let ux = s.rx + (s.nx - s.rx) * upMix;
-    let uy = s.ry + (s.ny - s.ry) * upMix;
-    let uz = s.rz + (s.nz - s.rz) * upMix;
+  push(s: Sample, o: PushOptions): void {
+    let ux = s.rx + (s.nx - s.rx) * o.upMix;
+    let uy = s.ry + (s.ny - s.ry) * o.upMix;
+    let uz = s.rz + (s.nz - s.rz) * o.upMix;
     const ul = Math.hypot(ux, uy, uz) || 1;
     ux /= ul;
     uy /= ul;
@@ -404,10 +444,10 @@ class SetBuilder {
     let fy = 0;
     let fz = 0;
     let fl = 0;
-    if (face) {
-      fx = face.x - s.x;
-      fy = face.y - s.y;
-      fz = face.z - s.z;
+    if (o.face) {
+      fx = o.face.x - s.x;
+      fy = o.face.y - s.y;
+      fz = o.face.z - s.z;
       const d = fx * ux + fy * uy + fz * uz;
       fx -= d * ux;
       fy -= d * uy;
@@ -422,16 +462,20 @@ class SetBuilder {
     fy /= fl;
     fz /= fl;
     // Rotate about up: f' = f cos a + (up × f) sin a
-    const ca = Math.cos(angle);
-    const sa = Math.sin(angle);
+    const ca = Math.cos(o.angle);
+    const sa = Math.sin(o.angle);
     const cx = uy * fz - uz * fy;
     const cy = uz * fx - ux * fz;
     const cz = ux * fy - uy * fx;
-    this.pos.push(s.x - ux * sink * scale, s.y - uy * sink * scale, s.z - uz * sink * scale);
+    const sink = o.sink * o.scale;
+    this.pos.push(s.x - ux * sink, s.y - uy * sink, s.z - uz * sink);
     this.up.push(ux, uy, uz);
     this.fwd.push(fx * ca + cx * sa, fy * ca + cy * sa, fz * ca + cz * sa);
-    this.scl.push(scale);
-    this.col.push(color[0], color[1], color[2]);
+    this.scl.push(o.scale);
+    this.col.push(o.color[0], o.color[1], o.color[2]);
+    const c2 = o.color2 ?? o.color;
+    this.col2.push(c2[0], c2[1], c2[2]);
+    this.vars.push(o.variant ?? 0);
   }
 
   build(): PropSet {
@@ -443,6 +487,8 @@ class SetBuilder {
       forwards: new Float32Array(this.fwd),
       scales: new Float32Array(this.scl),
       colors: new Float32Array(this.col),
+      colors2: new Float32Array(this.col2),
+      variants: new Uint8Array(this.vars),
     };
   }
 }
@@ -461,13 +507,28 @@ function dist2(a: Sample, b: Sample): number {
   return (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2;
 }
 
+const TRUNK = {
+  brown: hexToLinear('#5e4330'),
+  dark: hexToLinear('#4b3527'),
+  birch: hexToLinear('#ddd6c8'),
+  palm: hexToLinear('#8f6e4c'),
+  jungle: hexToLinear('#6b5946'),
+};
+/** House wall colours: creams, white, sand, pale blue-grey, pale pink, pale yellow. */
+const WALLS = ['#f1e4cb', '#f7f3ea', '#ecd7b4', '#e2e7e9', '#f2dccd', '#efe3b8'].map(hexToLinear);
+const CHAPEL_WALL = hexToLinear('#ece8df');
+
 /**
  * Place props on a terrain mesh.
  * @param maxInstances total budget across all prop kinds (quality dependent)
  */
-export function placeProps(mesh: SurfaceMesh, p: PlanetParams, maxInstances: number): PropSet[] {
+export function placeProps(mesh: SurfaceMesh, p: PlanetParams, maxInstances: number): PropPlacement {
   const builders = new Map<PropKind, SetBuilder>(PROP_KINDS.map((k) => [k, new SetBuilder(k)]));
-  const result = () => PROP_KINDS.map((k) => builders.get(k)!.build());
+  const villages: Sample[] = [];
+  const result = (radius = 0): PropPlacement => ({
+    sets: PROP_KINDS.map((k) => builders.get(k)!.build()),
+    villages: villages.map((v) => ({ dir: [v.rx, v.ry, v.rz], radius })),
+  });
   if (p.trees + p.rocks + p.houses <= 0.001 || mesh.positions.length === 0) return result();
 
   const hasOcean = p.liquid !== 'none';
@@ -494,13 +555,12 @@ export function placeProps(mesh: SurfaceMesh, p: PlanetParams, maxInstances: num
 
   // --- Villages: houses packed around a chapel, filled from the centre outwards -------------
   const villageR = scale * (2.6 + 2.4 * p.houses);
-  const villages: Sample[] = [];
   if (p.houses > 0.001) {
     const wanted = Math.max(1, Math.round(p.houses * lerp(5, 14, p.size)));
     for (const s of pool) {
       if (villages.length >= wanted) break;
       if (!isLand(s, 0.03) || s.slope > 0.1 || s.rock > 0.35 || s.elev > 0.45) continue;
-      if (villages.some((v) => dist2(v, s) < (villageR * 2.6) ** 2)) continue;
+      if (villages.some((v) => dist2(v, s) < (villageR * 3.2) ** 2)) continue;
       villages.push(s);
     }
     const loc = locatorFor(mesh);
@@ -512,7 +572,14 @@ export function placeProps(mesh: SurfaceMesh, p: PlanetParams, maxInstances: num
       if (target >= 8 && budget > 0) {
         const ts = scale * 1.05;
         grid.add(v.x, v.y, v.z, ts * 0.8);
-        towers.push(v, 0.15, 0.04, ts, vary(colors.roof, vr, 0.08), vr.next() * Math.PI * 2);
+        towers.push(v, {
+          upMix: 0.15,
+          sink: 0.04,
+          scale: ts,
+          color: vary(colors.roof, vr, 0.08),
+          color2: CHAPEL_WALL,
+          angle: vr.next() * Math.PI * 2,
+        });
         budget--;
       }
       // Candidates nearest the centre first; the jitter keeps the edge of town ragged.
@@ -528,58 +595,119 @@ export function placeProps(mesh: SurfaceMesh, p: PlanetParams, maxInstances: num
       }
       cands.sort((a, b) => a.d - b.d);
       let placed = 0;
-      for (const { s } of cands) {
+      for (const { s, d } of cands) {
         if (placed >= target || budget <= 0) break;
         if (!isLand(s, 0.025) || s.slope > 0.16 || s.rock > 0.5) continue;
         const r = new Rng(s.seed);
-        const hs = scale * (0.8 + r.next() * 0.35);
-        if (!grid.isFree(s.x, s.y, s.z, hs * 0.9)) continue;
-        grid.add(s.x, s.y, s.z, hs * 0.9);
+        // Town houses near the square, long houses and cottages further out.
+        const pick = r.next();
+        const variant = d < villageR * 0.45 && pick < 0.45 ? 2 : pick < 0.3 ? 1 : 0;
+        const hs = scale * (0.8 + r.next() * 0.3);
+        const room = hs * (variant === 1 ? 1.12 : 0.9);
+        if (!grid.isFree(s.x, s.y, s.z, room)) continue;
+        grid.add(s.x, s.y, s.z, room);
         // Front doors face the village square.
-        houses.push(s, 0.25, 0.04, hs, vary(colors.roof, r, 0.12), (r.next() - 0.5) * 0.8, v);
+        houses.push(s, {
+          upMix: 0.25,
+          sink: 0.04,
+          scale: hs,
+          color: vary(colors.roof, r, 0.12),
+          color2: vary(WALLS[Math.floor(r.next() * WALLS.length)], r, 0.04),
+          variant,
+          angle: (r.next() - 0.5) * 0.8,
+          face: v,
+        });
         placed++;
         budget--;
       }
     }
   }
+  const nearVillage = (s: Sample, k: number) => villages.some((v) => dist2(v, s) < (villageR * k) ** 2);
 
   // --- Trees ---------------------------------------------------------------------------------
   if (p.trees > 0.001) {
     for (const s of pool) {
       if (budget <= 0) break;
-      if (!isLand(s, 0.035)) continue;
-      // Clearings around villages.
-      if (villages.some((v) => dist2(v, s) < (villageR * 0.85) ** 2)) continue;
-      const f = s.forest;
-      const wet = smoothstep(0.1, 0.6, s.moist);
-      let prob = smoothstep(0.02, 0.3, f + (s.moist - 0.45) * 0.7) * (0.2 + 0.8 * wet) * p.trees * 1.25;
-      prob *= 1 - smoothstep(0.2, 0.36, s.slope);
-      prob *= 1 - smoothstep(0.45, 0.85, s.rock);
-      const snowy = s.temp < p.snowLine + 0.02;
-      if (snowy) prob *= 0.45;
-      let kind: PropKind;
-      if (s.temp < 0.4 || (s.temp < 0.5 && f > 0.25)) kind = 'conifer';
-      else if (s.temp > 0.74 && s.moist > 0.5) kind = 'jungle';
-      else if (s.temp > 0.68 && s.moist < 0.24) {
-        kind = 'cactus';
-        prob = p.trees * 0.18 * (1 - smoothstep(0.24, 0.32, s.slope));
-      } else kind = 'broadleaf';
+      if (!isLand(s, 0.012)) continue;
+      // The village itself is clear; its fields keep only the odd tree.
+      if (nearVillage(s, 0.85)) continue;
       const rng = new Rng(s.seed);
+      if (nearVillage(s, 1.55) && rng.next() > 0.1) continue;
+      const snowy = s.temp < p.snowLine + 0.02;
+      const f = s.forest;
+      let kind: PropKind;
+      let prob: number;
+      let variant = 0;
+      // Palms line warm coasts, beaches included.
+      const warmCoast = hasOcean && s.elev < 0.075 && s.temp > 0.72 && s.moist > 0.18 && !snowy;
+      if (warmCoast && rng.next() < 0.75) {
+        kind = 'palm';
+        prob = p.trees * 0.65 * (1 - smoothstep(0.2, 0.32, s.slope));
+        variant = rng.next() < 0.5 ? 0 : 1;
+      } else {
+        if (s.elev < 0.035 && hasOcean) continue;
+        const wet = smoothstep(0.1, 0.6, s.moist);
+        prob = smoothstep(0.02, 0.3, f + (s.moist - 0.45) * 0.7) * (0.2 + 0.8 * wet) * p.trees * 1.25;
+        prob *= 1 - smoothstep(0.2, 0.36, s.slope);
+        prob *= 1 - smoothstep(0.45, 0.85, s.rock);
+        if (snowy) prob *= 0.45;
+        const pick = rng.next();
+        if (s.temp < 0.4 || (s.temp < 0.5 && f > 0.25)) {
+          kind = 'conifer';
+          variant = s.temp > 0.32 ? (pick < 0.6 ? 1 : 0) : pick < 0.2 ? 1 : 0;
+        } else if (s.temp > 0.74 && s.moist > 0.5) {
+          kind = 'jungle';
+          variant = pick < 0.6 ? 0 : 1;
+        } else if (s.temp > 0.68 && s.moist < 0.24) {
+          kind = 'cactus';
+          prob = p.trees * 0.18 * (1 - smoothstep(0.24, 0.32, s.slope));
+          variant = pick < 0.7 ? 0 : 1;
+        } else {
+          kind = 'broadleaf';
+          const birch = s.temp < 0.52 ? 0.4 : 0.18;
+          variant = pick < birch ? 1 : pick < 0.86 ? 0 : 2;
+        }
+      }
       if (rng.next() > prob) continue;
 
       const sizeJitter = 0.75 + rng.next() * 0.5;
-      const ts = scale * sizeJitter * (kind === 'jungle' ? 1.15 : kind === 'cactus' ? 0.75 : 1);
-      const spacing = ts * (kind === 'cactus' ? 0.9 : 0.42);
+      const kindScale = kind === 'jungle' ? 1.15 : kind === 'cactus' ? 0.75 : kind === 'palm' ? 1.05 : 1;
+      const ts = scale * sizeJitter * kindScale;
+      const spacing = ts * (kind === 'cactus' ? 0.9 : kind === 'palm' ? 0.4 : 0.42);
       if (!grid.isFree(s.x, s.y, s.z, spacing)) continue;
       grid.add(s.x, s.y, s.z, spacing);
 
       let color: RGB;
-      if (kind === 'conifer') color = vary(colors.taiga, rng, 0.14);
-      else if (kind === 'jungle') color = vary(colors.jungle, rng, 0.14);
-      else if (kind === 'cactus') color = vary(mix3(colors.grass, colors.savanna, 0.35), rng, 0.1);
-      else color = vary(mix3(colors.forest, colors.grass, rng.next() * 0.25), rng, 0.16);
+      let trunk = TRUNK.brown;
+      if (kind === 'conifer') {
+        color = vary(colors.taiga, rng, 0.14);
+        trunk = TRUNK.dark;
+      } else if (kind === 'jungle') {
+        color = vary(colors.jungle, rng, 0.14);
+        trunk = TRUNK.jungle;
+      } else if (kind === 'palm') {
+        color = vary(mix3(colors.jungle, colors.grass, 0.45), rng, 0.12);
+        trunk = TRUNK.palm;
+      } else if (kind === 'cactus') {
+        color = vary(mix3(colors.grass, colors.savanna, 0.35), rng, 0.1);
+      } else {
+        color = vary(mix3(colors.forest, colors.grass, rng.next() * 0.25), rng, 0.16);
+        if (variant === 1) {
+          // Birches: lighter, yellower leaves on pale trunks.
+          color = mix3(color, colors.grass, 0.35);
+          trunk = TRUNK.birch;
+        }
+      }
       if (snowy) color = mix3(color, colors.snow, 0.5);
-      builders.get(kind)!.push(s, kind === 'cactus' ? 0.15 : 0.3, 0.06, ts, color, rng.next() * Math.PI * 2);
+      builders.get(kind)!.push(s, {
+        upMix: kind === 'cactus' ? 0.15 : 0.3,
+        sink: 0.06,
+        scale: ts,
+        color,
+        color2: vary(trunk, rng, 0.08),
+        variant,
+        angle: rng.next() * Math.PI * 2,
+      });
       budget--;
     }
   }
@@ -589,21 +717,63 @@ export function placeProps(mesh: SurfaceMesh, p: PlanetParams, maxInstances: num
     const rocks = builders.get('rock')!;
     for (let i = pool.length - 1; i >= 0 && budget > 0; i--) {
       const s = pool[i];
-      if (!isLand(s, -0.005)) continue;
+      if (!isLand(s, -0.005) || nearVillage(s, 1.4)) continue;
       const rockRng = new Rng(mixSeed(s.seed, 0x50c4));
       const desert = (1 - smoothstep(0.1, 0.25, s.moist)) * smoothstep(0.55, 0.75, s.temp);
       const prob =
         p.rocks * (0.04 + 0.5 * smoothstep(0.3, 0.85, s.rock) + 0.4 * smoothstep(0.12, 0.3, s.slope) + 0.3 * desert);
       if (rockRng.next() > prob * 0.6) continue;
+      const pick = rockRng.next();
+      const variant = pick < 0.5 ? 0 : pick < 0.82 ? 1 : 2;
       const rs = scale * (0.35 + rockRng.next() * 0.55);
       if (!grid.isFree(s.x, s.y, s.z, rs * 0.7)) continue;
       grid.add(s.x, s.y, s.z, rs * 0.7);
-      rocks.push(s, 0.7, 0.15, rs, vary(colors.rock, rockRng, 0.18), rockRng.next() * Math.PI * 2);
+      rocks.push(s, {
+        upMix: 0.7,
+        sink: 0.15,
+        scale: rs,
+        color: vary(colors.rock, rockRng, 0.18),
+        variant,
+        angle: rockRng.next() * Math.PI * 2,
+      });
       budget--;
     }
   }
 
-  return result();
+  // --- Bushes: forest edges and meadows --------------------------------------------------------
+  if (p.trees > 0.001) {
+    const bushes = builders.get('bush')!;
+    for (const s of pool) {
+      if (budget <= 0) break;
+      if (!isLand(s, 0.04) || nearVillage(s, 0.75)) continue;
+      // Not in tundra or deserts.
+      if (s.temp < 0.25 || (s.temp > 0.68 && s.moist < 0.24)) continue;
+      const r = new Rng(mixSeed(s.seed, 0xb005));
+      const near = s.forest + (s.moist - 0.45) * 0.7;
+      const wet = smoothstep(0.08, 0.5, s.moist);
+      let prob = p.trees * 0.4 * smoothstep(-0.3, 0.05, near) * wet;
+      if (nearVillage(s, 1.55)) prob = p.trees * 0.12 * wet;
+      prob *= (1 - smoothstep(0.18, 0.32, s.slope)) * (1 - smoothstep(0.4, 0.8, s.rock));
+      if (r.next() > prob) continue;
+      const bs = scale * (0.38 + r.next() * 0.25);
+      if (!grid.isFree(s.x, s.y, s.z, bs * 0.45)) continue;
+      grid.add(s.x, s.y, s.z, bs * 0.45);
+      const snowy = s.temp < p.snowLine + 0.02;
+      let color = vary(mix3(colors.forest, colors.grass, 0.3 + r.next() * 0.3), r, 0.15);
+      if (snowy) color = mix3(color, colors.snow, 0.5);
+      bushes.push(s, {
+        upMix: 0.5,
+        sink: 0.06,
+        scale: bs,
+        color,
+        variant: r.next() < 0.25 ? 1 : 0,
+        angle: r.next() * Math.PI * 2,
+      });
+      budget--;
+    }
+  }
+
+  return result(villageR);
 }
 
 /** Puffy cumulus clouds for the "puffs" cloud style: positions on the cloud shell. */
@@ -648,7 +818,7 @@ export function placePuffs(p: PlanetParams, cloudRadius: number): PropSet {
       temp: 0,
       moist: 0,
     };
-    builder.push(sample, 0, 0, s, white, rng.next() * Math.PI * 2);
+    builder.push(sample, { upMix: 0, sink: 0, scale: s, color: white, angle: rng.next() * Math.PI * 2 });
   }
   return builder.build();
 }

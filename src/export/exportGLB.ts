@@ -4,7 +4,7 @@ import { hexToLinear } from '../core/math';
 import { colorContext, terrainAlbedo, waterColor } from '../planet/colors';
 import type { MeshData } from '../planet/generator';
 import type { PlanetParams } from '../planet/params';
-import { placeProps, placePuffs, type PropKind, type PropSet } from '../planet/props';
+import { placeProps, placePuffs, PROP_VARIANTS, type PropKind, type PropSet } from '../planet/props';
 import { buildRingProfile, RING_TEX_SIZE } from '../planet/rings';
 import { cloudPuffGeometry, geometryPart, PART, PROP_COLORS, propGeometry, propMatrix } from '../render/propGeometry';
 import type { PlanetView } from '../render/PlanetView';
@@ -255,7 +255,9 @@ const KIND_NAMES: Record<PropKind, string> = {
   conifer: 'Conifers',
   broadleaf: 'Trees',
   jungle: 'JungleTrees',
+  palm: 'Palms',
   cactus: 'Cacti',
+  bush: 'Bushes',
   rock: 'Rocks',
   house: 'Houses',
   tower: 'Chapels',
@@ -264,20 +266,26 @@ const TINT_NAMES: Record<PropKind, string> = {
   conifer: 'Needles',
   broadleaf: 'Leaves',
   jungle: 'Leaves',
+  palm: 'Fronds',
   cactus: 'Cactus',
+  bush: 'Leaves',
   rock: 'Stone',
   house: 'Roof',
   tower: 'Roof',
 };
 
-/** Trees, rocks and villages as instanced meshes: one per model part, tints in a few colour groups. */
+/**
+ * Trees, rocks and villages as instanced meshes: one per model variant and part. Per-instance
+ * colours (foliage, roofs, trunks, walls) are grouped into a few shades with their own materials.
+ */
 function buildProps(params: PlanetParams, mesh: MeshData, budget: number): THREE.Group {
   const group = new THREE.Group();
   group.name = 'Props';
   const surface = { positions: mesh.positions, normals: mesh.normals, data: mesh.data, indices: mesh.indices };
-  const plain: Record<number, [string, THREE.MeshStandardMaterial]> = {
+  const fixed: Record<number, [string, THREE.MeshStandardMaterial]> = {
     [PART.wood]: ['Wood', new THREE.MeshStandardMaterial({ name: 'Wood', color: PROP_COLORS.wood, roughness: 0.9 })],
-    [PART.wall]: ['Walls', new THREE.MeshStandardMaterial({ name: 'Walls', color: PROP_COLORS.wall, roughness: 0.85 })],
+    [PART.stone]: ['Stone', new THREE.MeshStandardMaterial({ name: 'Stone', color: PROP_COLORS.stone, roughness: 0.95 })],
+    [PART.accent]: ['Blossoms', new THREE.MeshStandardMaterial({ name: 'Blossoms', color: PROP_COLORS.accent, roughness: 0.8 })],
     [PART.window]: [
       'Windows',
       new THREE.MeshStandardMaterial({
@@ -285,34 +293,47 @@ function buildProps(params: PlanetParams, mesh: MeshData, budget: number): THREE
         color: PROP_COLORS.window,
         // A soft glow baked into the colour (no emissive-strength extension needed).
         emissive: new THREE.Color(PROP_COLORS.windowGlow).multiplyScalar(0.35),
-        roughness: 0.4,
+        roughness: 0.3,
       }),
     ],
   };
-  for (const set of placeProps(surface, params, budget)) {
+  for (const set of placeProps(surface, params, budget).sets) {
     if (set.count === 0) continue;
     const kindGroup = new THREE.Group();
     kindGroup.name = KIND_NAMES[set.kind];
-    const model = propGeometry(set.kind);
-    for (const part of [PART.wood, PART.tint, PART.wall, PART.window]) {
-      const geo = geometryPart(model, part);
-      if (!geo) continue;
-      if (part === PART.tint) {
-        colorGroups(set, 6).forEach((g, i) => {
-          const name = `${kindGroup.name}_${TINT_NAMES[set.kind]}${i + 1}`;
-          const mat = new THREE.MeshStandardMaterial({
-            name,
-            color: new THREE.Color().setRGB(g.color[0], g.color[1], g.color[2]),
-            roughness: set.kind === 'rock' ? 0.95 : 0.85,
+    // Colour groups (and their materials) are shared by all variants of a kind.
+    const shades = (colors: Float32Array, max: number, label: string) =>
+      colorGroups(colors, range(set.count), max).map((g, i) => ({
+        members: new Set(g.indices),
+        material: new THREE.MeshStandardMaterial({
+          name: `${kindGroup.name}_${label}${i + 1}`,
+          color: new THREE.Color().setRGB(g.color[0], g.color[1], g.color[2]),
+          roughness: set.kind === 'rock' ? 0.95 : 0.85,
+        }),
+      }));
+    const tintShades = shades(set.colors, 6, TINT_NAMES[set.kind]);
+    const secondShades = shades(set.colors2, 4, set.kind === 'house' || set.kind === 'tower' ? 'Walls' : 'Trunk');
+    for (let v = 0; v < PROP_VARIANTS[set.kind]; v++) {
+      const indices = range(set.count).filter((i) => set.variants[i] === v);
+      if (indices.length === 0) continue;
+      const prefix = PROP_VARIANTS[set.kind] > 1 ? `${kindGroup.name}${v + 1}` : kindGroup.name;
+      const model = propGeometry(set.kind, v);
+      for (const part of [PART.wood, PART.tint, PART.wall, PART.window, PART.trunk, PART.stone, PART.accent]) {
+        const geo = geometryPart(model, part);
+        if (!geo) continue;
+        if (part === PART.tint || part === PART.wall || part === PART.trunk) {
+          (part === PART.tint ? tintShades : secondShades).forEach((shade) => {
+            const members = indices.filter((i) => shade.members.has(i));
+            if (members.length === 0) return;
+            kindGroup.add(instanced(geo, shade.material, set, members, `${prefix}_${shade.material.name.split('_').pop()}`));
           });
-          kindGroup.add(instanced(geo, mat, set, g.indices, name));
-        });
-      } else {
-        const [label, mat] = plain[part];
-        kindGroup.add(instanced(geo, mat, set, range(set.count), `${kindGroup.name}_${label}`));
+        } else {
+          const [label, mat] = fixed[part];
+          kindGroup.add(instanced(geo, mat, set, indices, `${prefix}_${label}`));
+        }
       }
+      model.dispose();
     }
-    model.dispose();
     group.add(kindGroup);
   }
   return group;
@@ -326,10 +347,9 @@ function instanced(geo: THREE.BufferGeometry, mat: THREE.Material, set: PropSet,
   return m;
 }
 
-/** Median-cut the per-instance tints into at most `max` groups with their mean colour. */
-function colorGroups(set: PropSet, max: number): Array<{ indices: number[]; color: [number, number, number] }> {
-  const c = set.colors;
-  const groups: number[][] = [range(set.count)];
+/** Median-cut per-instance colours (of the given instances) into at most `max` groups with their mean. */
+function colorGroups(c: Float32Array, instances: number[], max: number): Array<{ indices: number[]; color: [number, number, number] }> {
+  const groups: number[][] = [instances.slice()];
   while (groups.length < max) {
     let best = -1;
     let bestChannel = 0;
