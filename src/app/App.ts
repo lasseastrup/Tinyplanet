@@ -71,6 +71,7 @@ export class App {
   private disposed = false;
   private paused = false;
   private rig: CameraRig | null = null;
+  private resizeObserver: ResizeObserver | null = null;
   /** Set to render frames on demand only (e.g. for screenshots in tests). */
   manualFrames = false;
 
@@ -135,6 +136,14 @@ export class App {
     this.regenerate({ terrain: true, moons: true }, true);
 
     window.addEventListener('resize', this.onResize);
+    // Phones can fire 'resize' for a rotation before the new layout is in place, and not again
+    // after it: the canvas would keep its old size, off-centre. Watch the container itself too.
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => {
+        if (container.clientWidth !== this.viewW || container.clientHeight !== this.viewH) this.onResize();
+      });
+      this.resizeObserver.observe(container);
+    }
     document.addEventListener('visibilitychange', this.onVisibility);
     const canvas = this.renderer.domElement;
     canvas.addEventListener('webglcontextlost', (e) => {
@@ -474,6 +483,7 @@ export class App {
     this.renderer.setAnimationLoop(null);
     this.timer.dispose();
     window.removeEventListener('resize', this.onResize);
+    this.resizeObserver?.disconnect();
     document.removeEventListener('visibilitychange', this.onVisibility);
     this.generator.dispose();
     this.planet.dispose();

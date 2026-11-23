@@ -111,8 +111,8 @@ planet you are looking at).
 - **Daylight follows you:** a tiny world is circled in about 20 seconds, so a fixed sun would put you on
   the night side half the time. The planet instead rolls under a sun that keeps its place in your sky.
 - **Shooting:** twin blasters fire bolts that follow the curvature and dip gently, so they strafe the
-  ground ahead; a ring shows where they will land and turns orange over a target. Trees, rocks and
-  houses burst into tumbling shards in their own colours. Splashes on water, sparks and dust on land.
+  ground ahead. Trees, rocks and houses burst into tumbling shards in their own colours. Splashes on
+  water, sparks and dust on land.
 - **Camera:** a chase camera that looks down past the (steeply dipping) horizon of a tiny world, rolls a
   little into turns, widens on boost, dissolves puffy clouds right in front of it, and dives in from
   orbit when you arrive.
@@ -257,7 +257,7 @@ src/
     Ship.ts               flight on the sphere, terrain and obstacle following
     shipGeometry.ts       the low-poly ship (built with the props' Builder)
     ChaseCamera.ts        third-person camera and the dive from orbit
-    Blasters.ts           bolts along the curvature, aim prediction, collisions
+    Blasters.ts           bolts along the curvature, collisions
     Effects.ts            sparks, dust, splashes and debris shards
     PropField.ts          props as collision cylinders in a spatial hash
     Surface.ts            ground and sea height queries

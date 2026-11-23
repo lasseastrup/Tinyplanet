@@ -53,8 +53,6 @@ export class Game implements CameraRig {
   readonly props = new PropField();
   readonly camera = new ChaseCamera();
   private readonly root = new THREE.Group();
-  private readonly reticle: THREE.Mesh;
-  private readonly reticleMat: THREE.MeshBasicMaterial;
   private state: State = 'loading';
   private stateTime = 0;
   private world: World;
@@ -86,13 +84,8 @@ export class Game implements CameraRig {
     this.family = Math.max(0, FAMILIES.indexOf(world.params.preset as (typeof FAMILIES)[number]));
     this.ship = new Ship(app.planet.uniforms, app.quality.defines);
     this.effects = new Effects(app.planet.uniforms);
-    this.reticleMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(), transparent: true, depthWrite: false, side: THREE.DoubleSide });
-    this.reticle = new THREE.Mesh(new THREE.RingGeometry(0.7, 1, 40), this.reticleMat);
-    this.reticle.matrixAutoUpdate = false;
-    this.reticle.renderOrder = 10;
-    this.reticle.visible = false;
     this.root.name = 'Game';
-    this.root.add(this.ship.mesh, this.blasters.mesh, this.effects.group, this.reticle);
+    this.root.add(this.ship.mesh, this.blasters.mesh, this.effects.group);
     app.planet.spin.add(this.root);
 
     this.blasters.onShot = (gun, muzzle) => {
@@ -175,7 +168,6 @@ export class Game implements CameraRig {
     } else {
       planet.shadowReach = 0;
     }
-    this.updateReticle(flyingShip && this.state !== 'leaving');
     this.updatePops(dt);
     const cam = this.app.camera;
     const pxScale = this.app.renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2));
@@ -320,43 +312,6 @@ export class Game implements CameraRig {
         this.effects.exhaust(_x, drift, r, strength);
       }
     }
-  }
-
-  /** A ring on the ground where the next bolt would land (around a prop if it would hit one). */
-  private updateReticle(show: boolean): void {
-    const hit = show ? this.blasters.predict(this.ship, this.surface, this.props) : null;
-    if (!hit) {
-      this.reticle.visible = false;
-      return;
-    }
-    const u = this.ship.unit;
-    const pulse = 1 + 0.08 * Math.sin(this.stateTime * 9);
-    let size: number;
-    const n = _y;
-    if (hit.kind === 'prop') {
-      const i = hit.prop;
-      _c.set(this.props.base[i * 3], this.props.base[i * 3 + 1], this.props.base[i * 3 + 2]);
-      n.set(this.props.up[i * 3], this.props.up[i * 3 + 1], this.props.up[i * 3 + 2]);
-      size = (this.props.radius[i] * 1.5 + u * 0.15) * pulse;
-      this.reticleMat.color.setRGB(5, 1.5, 0.7);
-      this.reticleMat.opacity = 0.9;
-    } else {
-      _c.copy(hit.point);
-      n.copy(hit.normal);
-      size = u * 0.3 * pulse;
-      this.reticleMat.color.setRGB(1.6, 2.1, 2.6);
-      this.reticleMat.opacity = 0.55;
-    }
-    _c.addScaledVector(n, u * 0.06);
-    // Ring lies in the plane perpendicular to n.
-    _x.set(1, 0, 0);
-    if (Math.abs(n.x) > 0.9) _x.set(0, 1, 0);
-    _x.addScaledVector(n, -_x.dot(n)).normalize();
-    _w.crossVectors(n, _x);
-    this.reticle.matrix.makeBasis(_x.multiplyScalar(size), _w.multiplyScalar(size), _v.copy(n).multiplyScalar(size));
-    this.reticle.matrix.setPosition(_c);
-    this.reticle.matrixWorldNeedsUpdate = true;
-    this.reticle.visible = true;
   }
 
   private onBoltHit(hit: BoltHit): void {

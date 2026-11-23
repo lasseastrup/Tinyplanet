@@ -166,17 +166,14 @@ export class Input {
 
   private readonly onStickMove = (e: PointerEvent): void => {
     if (e.pointerId !== this.stickId) return;
+    // The stick stays where the finger first touched; past its rim the knob stops at the edge
+    // (pointing at the finger) and the input stays at full deflection.
     let dx = e.clientX - this.stickOrigin.x;
     let dy = e.clientY - this.stickOrigin.y;
     const len = Math.hypot(dx, dy);
     if (len > STICK_RANGE) {
-      // Drag the stick along so turning back is immediate.
-      const k = (len - STICK_RANGE) / len;
-      this.stickOrigin.x += dx * k;
-      this.stickOrigin.y += dy * k;
-      dx -= dx * k;
-      dy -= dy * k;
-      this.stickBase.style.transform = `translate(${this.stickOrigin.x}px, ${this.stickOrigin.y}px)`;
+      dx *= STICK_RANGE / len;
+      dy *= STICK_RANGE / len;
     }
     const shape = (v: number) => {
       const a = Math.abs(v) / STICK_RANGE;

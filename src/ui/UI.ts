@@ -145,6 +145,8 @@ export class UI {
     window.addEventListener('keydown', this.onKey);
     this.mobile.addEventListener('change', () => this.updateInsets());
     window.addEventListener('resize', () => this.updateInsets());
+    // Rotating a phone can report the new size late; the overlay's own box is always current.
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => this.updateInsets()).observe(root);
 
     // Open by default only where there's room for both the planet and the panel.
     this.panelOpen = !this.mobile.matches && window.innerWidth >= 1000 && window.innerHeight >= 560;
@@ -259,7 +261,7 @@ export class UI {
       return;
     }
     if (this.mobile.matches) {
-      this.app.setViewInsets(0, Math.round(window.innerHeight * 0.48));
+      this.app.setViewInsets(0, Math.round((this.root.clientHeight || window.innerHeight) * 0.48));
     } else {
       this.app.setViewInsets(this.panel.offsetWidth + 24, 0);
     }

@@ -73,8 +73,6 @@ export class Blasters {
   private cooldown = 0;
   private gun = 0;
   private readonly hit: BoltHit = { kind: 'ground', point: new THREE.Vector3(), normal: new THREE.Vector3(), prop: -1 };
-  /** A test bolt for predict(). */
-  private readonly probe: Bolt = { dir: new THREE.Vector3(), fwd: new THREE.Vector3(), radius: 1, vr: 0, speed: 0, life: 0 };
   /** Called for every shot (gun 0 = left, 1 = right) with the planet-local muzzle position. */
   onShot: (gun: number, muzzle: THREE.Vector3) => void = () => {};
   /** Called when a bolt hits something. The hit object is reused; copy what you keep. */
@@ -142,21 +140,6 @@ export class Blasters {
     }
     this.mesh.count = this.live;
     this.mesh.instanceMatrix.needsUpdate = true;
-  }
-
-  /**
-   * Where a bolt fired right now would hit (for the aiming reticle). Returns null if it would
-   * fizzle out first. The result is reused between calls.
-   */
-  predict(ship: Ship, surface: Surface, props: PropField): BoltHit | null {
-    const muzzle = ship.localPoint(SHIP_GUNS[0], _q).add(ship.localPoint(SHIP_GUNS[1], _v)).multiplyScalar(0.5);
-    const b = this.launch(ship, muzzle, this.probe);
-    const u = ship.unit;
-    const dt = (u * 0.45) / b.speed;
-    for (let t = 0; t < BLASTER.life; t += dt) {
-      if (this.step(b, dt, u, surface, props)) return this.hit;
-    }
-    return null;
   }
 
   private fire(ship: Ship): void {
