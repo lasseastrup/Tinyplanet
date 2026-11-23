@@ -16,6 +16,8 @@ export interface UIHandlers {
   share(): Promise<void>;
   copyLink(): Promise<void>;
   screenshot(): Promise<void>;
+  /** Fly a spaceship around this planet (the flight game). */
+  fly(): void;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, html?: string): HTMLElementTagNameMap[K] {
@@ -74,10 +76,11 @@ export class UI {
     titleBlock.append(brand, nameRow, this.subtitleEl);
 
     const actions = el('div', 'top-actions');
+    const flyBtn = iconButton('rocket', 'Fly around this planet');
     const shotBtn = iconButton('camera', 'Save screenshot');
     const shareBtn = iconButton('share', 'Share this planet');
     const panelBtn = iconButton('sliders', 'Customize', 'icon-btn panel-toggle');
-    actions.append(shotBtn, shareBtn, panelBtn);
+    actions.append(flyBtn, shotBtn, shareBtn, panelBtn);
     top.append(titleBlock, actions);
 
     // --- Bottom: presets + randomize ------------------------------------------------------
@@ -124,6 +127,7 @@ export class UI {
     root.append(top, bottom, this.panel, this.toastEl, showUi);
 
     // --- Events -----------------------------------------------------------------------------
+    flyBtn.addEventListener('click', () => this.handlers.fly());
     shotBtn.addEventListener('click', () => void this.handlers.screenshot());
     shareBtn.addEventListener('click', () => void this.handlers.share());
     panelBtn.addEventListener('click', () => this.setPanelOpen(!this.panelOpen));

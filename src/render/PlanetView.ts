@@ -4,7 +4,7 @@ import { buildBiomeLut, biomeLutKey, LUT_SIZE } from '../planet/biomes';
 import type { MeshData, MoonResult, TerrainResult } from '../planet/generator';
 import { buildIcosphere } from '../planet/icosphere';
 import { propScale, type PlanetParams } from '../planet/params';
-import { placePuffs, PROP_KINDS, PROP_VARIANTS, type PropPlacement, type PropSet } from '../planet/props';
+import { placePuffs, PROP_KINDS, PROP_VARIANTS, type PropKind, type PropPlacement, type PropSet } from '../planet/props';
 import { buildRingProfile, RING_TEX_SIZE } from '../planet/rings';
 import { createAuroraGeometry, createAuroraMaterial } from './materials/aurora';
 import { createCloudMaterial } from './materials/clouds';
@@ -156,6 +156,13 @@ export class PlanetView {
   private puffKey = '';
   /** Latest prop placement (kept for export). */
   propSets: PropSet[] = [];
+  /** Per prop kind: the instance slot of each prop in its "kind:variant" mesh. */
+  private readonly propSlots = new Map<PropKind, Int32Array>();
+  /**
+   * Sun shadows cover everything within this distance of the planet centre, even when it is
+   * further out than the terrain, props and clouds (e.g. a game's ship flying high).
+   */
+  shadowReach = 0;
 
   private readonly biomeTex: THREE.DataTexture;
   private readonly ringTex: THREE.DataTexture;
@@ -307,9 +314,32 @@ export class PlanetView {
     tu.uVillageCount.value = sites.length;
     for (const set of sets) {
       const byVariant: number[][] = Array.from({ length: PROP_VARIANTS[set.kind] }, () => []);
-      for (let i = 0; i < set.count; i++) byVariant[Math.min(byVariant.length - 1, set.variants[i])].push(i);
+      const slots = new Int32Array(set.count);
+      for (let i = 0; i < set.count; i++) {
+        const v = Math.min(byVariant.length - 1, set.variants[i]);
+        slots[i] = byVariant[v].length;
+        byVariant[v].push(i);
+      }
+      this.propSlots.set(set.kind, slots);
       byVariant.forEach((indices, v) => this.updatePropMesh(set, v, indices));
     }
+  }
+
+  /**
+   * Scale one prop of the current placement about its base (1 = as placed, 0 = hidden), e.g. to
+   * let a game knock trees over. Its contact and sun shadows follow. Placing props again resets it.
+   */
+  setPropScale(kind: PropKind, index: number, scale: number): void {
+    const set = this.propSets.find((s) => s.kind === kind);
+    const slots = this.propSlots.get(kind);
+    if (!set || !slots || index < 0 || index >= set.count) return;
+    const variant = Math.min(PROP_VARIANTS[kind] - 1, set.variants[index]);
+    const mesh = this.propMeshes.get(`${kind}:${variant}`);
+    if (!mesh) return;
+    propMatrix(set, index, tmpM);
+    if (scale !== 1) tmpM.scale(tmpV.setScalar(scale));
+    mesh.setMatrixAt(slots[index], tmpM);
+    mesh.instanceMatrix.needsUpdate = true;
   }
 
   private updatePropMesh(set: PropSet, variant: number, indices: number[]): void {
@@ -436,9 +466,18 @@ export class PlanetView {
     const peak = 1 + Math.max(this.terrainInfo?.maxHeight ?? 1, p.seaLevel) * this.meshHeightScale;
     let radius = peak + (p.trees + p.rocks + p.houses > 0.001 ? propScale(p.size) * 1.9 : 0);
     if (this.puffs?.visible) radius = Math.max(radius, u.uCloudRadius.value + 0.05);
+    radius = Math.max(radius, this.shadowReach);
     sh.render(renderer, scene, u.uPlanetCenter.value, u.uSunDir.value, radius + 0.02);
     u.uShadowMatrix.value.copy(sh.matrix);
     u.uShadowTexel.value.set(1 / sh.mapSize, sh.texelWorld);
+  }
+
+  /**
+   * Puffy clouds closer to the camera than `distance` dissolve, so a camera flying among them can
+   * see past them (0 = off, the default).
+   */
+  setCloudNearFade(distance: number): void {
+    this.puffMat.uniforms.uNearFade.value = distance;
   }
 
   /** Oceans sit at this radius (also the reference "ground" for the atmosphere). */
@@ -679,6 +718,7 @@ export class PlanetView {
 }
 
 const tmpM = new THREE.Matrix4();
+const tmpV = new THREE.Vector3();
 const tmpC = new THREE.Color();
 const MAX_VILLAGES = 16;
 

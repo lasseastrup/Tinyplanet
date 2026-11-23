@@ -93,6 +93,46 @@ It then launches like a native app without browser bars, works offline after the
 | Close the panel | `Esc` | drag the sheet handle down |
 | Reset a slider to the preset value | double-click its label | |
 
+## Flight (game prototype)
+
+![Flying over a Pocket world](docs/flight.jpg)
+
+A first step towards a game played on these planets: fly a little spaceship around tiny worlds in
+third person and blast things. Open `game.html` (or press the rocket button in the editor to fly the
+planet you are looking at).
+
+- **Worlds** are the Pocket, Isle and Snowglobe dioramas with fresh seeds, a few environments per family
+  (meadow, autumn and highland pockets; lagoon, archipelago and volcanic isles; winter, frozen-sea and
+  thaw snowglobes) and world sizes from tiny to large. **New world** (`N`) warps to the next one;
+  `game.html?world=isle&seed=42` picks a specific one.
+- **Flight** follows the curvature: the ship moves along great circles, stays level with the planet
+  below and holds its height over hills, the sea, trees and houses (it hops over the chapel spire).
+  Speeds and sizes scale with the world, so tiny worlds take seconds to circle and large ones longer.
+- **Daylight follows you:** a tiny world is circled in about 20 seconds, so a fixed sun would put you on
+  the night side half the time. The planet instead rolls under a sun that keeps its place in your sky.
+- **Shooting:** twin blasters fire bolts that follow the curvature and dip gently, so they strafe the
+  ground ahead; a ring shows where they will land and turns orange over a target. Trees, rocks and
+  houses burst into tumbling shards in their own colours. Splashes on water, sparks and dust on land.
+- **Camera:** a chase camera that looks down past the (steeply dipping) horizon of a tiny world, rolls a
+  little into turns, widens on boost, dissolves puffy clouds right in front of it, and dives in from
+  orbit when you arrive.
+- Synthesized sound effects (no audio files), mute with `M`.
+
+| Action | Keyboard | Touch | Gamepad |
+| --- | --- | --- | --- |
+| Steer | `←` `→` / `A` `D` | left thumb (floating stick) | left stick / d-pad |
+| Climb / descend | `↑` `↓` / `W` `S` | left thumb | left stick / d-pad |
+| Boost | `Shift` | **Boost** button | B, bumpers, LT |
+| Fire | `Space` / `J` / `Enter`, left mouse button | **Fire** button | A, RT |
+| New world | `N` | dice button | Y |
+| Hide HUD / mute | `H` / `M` | | |
+
+The game reuses the generator and renderer through a few small hooks: `App.setCameraRig()` hands the
+camera to the game, `AppEvents.props` reports new prop placements, `sampleSurface()` (in
+`planet/props.ts`) answers terrain-height queries with the props' cached triangle grid,
+`PlanetView.setPropScale()` pops individual trees and houses, `PlanetView.shadowReach` keeps the ship
+in the sun's shadow map, and `PlanetView.setCloudNearFade()` dissolves clouds near the camera.
+
 ## Using planets in a game
 
 ### 1. Export a model (`.glb`)
@@ -173,7 +213,8 @@ npm run build      # type-check + production build into dist/
 npm run preview    # serve the production build
 ```
 
-Useful URL parameters: `?preset=glacia`, `?quality=low|medium|high`.
+Useful URL parameters: `?preset=glacia`, `?quality=low|medium|high`. The flight game is at
+http://localhost:5173/game.html (`?world=pocket|isle|snowglobe&seed=…`, `?quality=` works there too).
 
 ## Deploying to GitHub Pages
 
@@ -211,6 +252,17 @@ src/
     SpaceBackground.ts    stars, nebula, sun
   ui/                     panel, controls schema, icons, styles
   export/                 glTF export and file delivery
+  game/                   flight prototype (game.html)
+    Game.ts               states (arrive, fly, warp), spawning, hits, the sun that follows the ship
+    Ship.ts               flight on the sphere, terrain and obstacle following
+    shipGeometry.ts       the low-poly ship (built with the props' Builder)
+    ChaseCamera.ts        third-person camera and the dive from orbit
+    Blasters.ts           bolts along the curvature, aim prediction, collisions
+    Effects.ts            sparks, dust, splashes and debris shards
+    PropField.ts          props as collision cylinders in a spatial hash
+    Surface.ts            ground and sea height queries
+    worlds.ts             Pocket / Isle / Snowglobe worlds with environments and sizes
+    Input.ts / Hud.ts / Sfx.ts   controls (keys, touch, gamepad), on-screen display, sound
 ```
 
 ## Credits

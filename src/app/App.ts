@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GeneratorClient } from '../planet/GeneratorClient';
 import type { MoonResult, TerrainResult } from '../planet/generator';
-import { placeProps } from '../planet/props';
+import { placeProps, type PropPlacement } from '../planet/props';
 import {
   effectiveHeightScale,
   PROP_KEYS,
@@ -22,6 +22,17 @@ export interface AppEvents {
   change?: (params: PlanetParams, changed: ParamKey[]) => void;
   busy?: (busy: boolean) => void;
   generated?: (info: TerrainResult) => void;
+  /** Trees, rocks and houses were (re)placed; `planet.propSets` holds the new placement. */
+  props?: (placement: PropPlacement) => void;
+}
+
+/**
+ * Takes over the camera from the globe controls, e.g. a game's chase camera. While a rig is set
+ * the controls, the framing and the fly-in animations leave the camera alone.
+ */
+export interface CameraRig {
+  /** Called every frame after the planet has moved and before shadows and the main render. */
+  update(dt: number, time: number): void;
 }
 
 const FOV = 35;
@@ -59,6 +70,7 @@ export class App {
   private dolly: { t: number; duration: number; base: number; curve: (t: number) => number } | null = null;
   private disposed = false;
   private paused = false;
+  private rig: CameraRig | null = null;
   /** Set to render frames on demand only (e.g. for screenshots in tests). */
   manualFrames = false;
 
@@ -155,10 +167,26 @@ export class App {
     }
     this.time += dt;
     this.planet.update(this.time, dt);
-    this.controls.update();
-    this.applyCloseUp();
+    this.updateCamera(dt);
     this.planet.renderShadows(this.renderer, this.scene);
     this.post.render(this.scene, this.camera, dt);
+  }
+
+  /** Hand the camera to a rig (null gives it back to the globe controls). */
+  setCameraRig(rig: CameraRig | null): void {
+    this.rig = rig;
+    this.dolly = null;
+    this.controls.enabled = !rig;
+    if (!rig) this.frameCamera(true);
+  }
+
+  private updateCamera(dt: number): void {
+    if (this.rig) {
+      this.rig.update(dt, this.time);
+    } else {
+      this.controls.update();
+      this.applyCloseUp();
+    }
   }
 
   get ready(): boolean {
@@ -180,8 +208,7 @@ export class App {
     this.animateDolly(dt);
     this.updateDetailBoost();
     this.planet.update(this.time, dt);
-    this.controls.update();
-    this.applyCloseUp();
+    this.updateCamera(dt);
     this.planet.renderShadows(this.renderer, this.scene);
     this.post.render(this.scene, this.camera, dt);
     this.adaptResolution(dt);
@@ -189,6 +216,7 @@ export class App {
 
   /** Animate the camera distance as base·curve(t) over `duration` seconds (curve(1) must be 1). */
   private startDolly(duration: number, curve: (t: number) => number): void {
+    if (this.rig) return;
     if (this.dolly) this.animateDolly(1e3); // finish any running dolly first
     const base = this.camera.position.distanceTo(this.controls.target);
     this.dolly = { t: 0, duration, base, curve };
@@ -346,6 +374,7 @@ export class App {
       this.quality.maxProps,
     );
     this.planet.setProps(placement);
+    this.events.props?.(placement);
   }
 
   setQuality(level: QualityLevel): void {
@@ -389,6 +418,7 @@ export class App {
 
   /** Keep the planet nicely framed for the current aspect ratio. */
   private frameCamera(reset: boolean): void {
+    if (this.rig) return;
     const p = this.params;
     const radius = Math.max(1.22, p.rings > 0.001 ? p.ringOuter * 0.92 : 0);
     const tanHalf = Math.tan((FOV * Math.PI) / 360);

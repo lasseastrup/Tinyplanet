@@ -38,7 +38,7 @@ export const PROP_COLORS = {
   accent: '#ff9db8',
 } as const;
 
-type V3 = [number, number, number];
+export type V3 = [number, number, number];
 type VertexFn = (p: V3) => number;
 type Side = '+x' | '-x' | '+z' | '-z';
 
@@ -64,7 +64,8 @@ function rand(seed: number): () => number {
   };
 }
 
-class Builder {
+/** Collects flat-shaded triangles with the attributes the prop material reads (see the header). */
+export class Builder {
   private readonly pos: number[] = [];
   private readonly nor: number[] = [];
   private readonly prt: number[] = [];

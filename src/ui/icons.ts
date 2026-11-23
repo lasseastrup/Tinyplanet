@@ -27,6 +27,12 @@ export const ICONS = {
   link: svg('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'),
   file: svg('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>'),
   refresh: svg('<path d="M20 11a8 8 0 0 0-14.6-4.5L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.6 4.5L20 16"/><path d="M20 20v-4h-4"/>'),
+  rocket: svg(
+    '<path d="M12 2.8c3 2.2 4.6 5.6 4.6 9.4v3.3H7.4v-3.3c0-3.8 1.6-7.2 4.6-9.4z"/><circle cx="12" cy="9.6" r="1.7"/><path d="M7.4 12.6L4.6 15.4v2.8l2.8-1.4M16.6 12.6l2.8 2.8v2.8l-2.8-1.4"/><path d="M10.3 18.6l1.7 2.6 1.7-2.6"/>',
+  ),
+  sound: svg('<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18.2 6.5a8 8 0 0 1 0 11"/>'),
+  mute: svg('<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>'),
+  burst: svg('<path d="M12 3l1.8 5.2L19 6.6l-2.6 4.6L21 14l-5.3.7L16.5 20 12 16.8 7.5 20l.8-5.3L3 14l4.6-2.8L5 6.6l5.2 1.6z"/>'),
 } as const;
 
 export type IconName = keyof typeof ICONS;

@@ -63,6 +63,9 @@ uniform vec3 uWindowGlow;
 uniform vec3 uStoneColor;
 uniform vec3 uAccentColor;
 uniform vec3 uPuffColor;
+// Puffs closer to the camera than this dissolve (screen-door), so a camera flying among the
+// clouds can see past them. 0 = off.
+uniform float uNearFade;
 
 varying vec3 vWorldPos;
 varying vec3 vNormal;
@@ -96,6 +99,11 @@ void main() {
   vec3 col = uPuffColor * 0.78 * (sunLight * diff * mix(0.75, 1.0, ao) + (sky * 0.8 + ambient * 1.4) * ao);
   // Stay below the bloom threshold: thin, bright cloud edges would otherwise glow and flicker.
   col = min(col, vec3(1.7));
+  if (uNearFade > 0.0) {
+    float keep = smoothstep(uNearFade * 0.35, uNearFade, distance(cameraPosition, vWorldPos));
+    float dither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    if (dither >= keep) discard;
+  }
 #else
   float dayMask = smoothstep(-0.07, 0.12, sunDot);
   float shadow = ringShadow(vWorldPos) * moonShadow(vWorldPos) * cloudShadow(vWorldPos) * sunShadowMap(vWorldPos, N);
@@ -219,6 +227,7 @@ export function createPropMaterial(
       uStoneColor: { value: new THREE.Color(PROP_COLORS.stone) },
       uAccentColor: { value: new THREE.Color(PROP_COLORS.accent) },
       uPuffColor: { value: new THREE.Color('#ffffff') },
+      uNearFade: { value: 0 },
     },
     defines,
     vertexShader: VERT,

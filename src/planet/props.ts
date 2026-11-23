@@ -172,8 +172,11 @@ class TriangleLocator {
     }
   }
 
-  /** Locate the triangle under direction d; fills ia/ib/ic and barycentric weights. */
-  locate(dx: number, dy: number, dz: number): boolean {
+  /**
+   * Locate the triangle under direction d; fills ia/ib/ic and barycentric weights.
+   * @param exhaustive when the grid cell misses (numerical corner cases), test every triangle
+   */
+  locate(dx: number, dy: number, dz: number, exhaustive = true): boolean {
     const ax = Math.abs(dx), ay = Math.abs(dy), az = Math.abs(dz);
     let f: number;
     if (ax >= ay && ax >= az) f = dx >= 0 ? 0 : 1;
@@ -189,6 +192,7 @@ class TriangleLocator {
     for (let k = this.start[cell]; k < this.start[cell + 1]; k++) {
       if (this.test(this.items[k], dx, dy, dz)) return true;
     }
+    if (!exhaustive) return false;
     // Numerical corner cases: fall back to testing every triangle.
     const T = triangleCount(this.m);
     for (let t = 0; t < T; t++) if (this.test(t, dx, dy, dz)) return true;
@@ -236,6 +240,44 @@ function locatorFor(m: SurfaceMesh): TriangleLocator {
     locators.set(m.positions, loc);
   }
   return loc;
+}
+
+/** Where a ray from the planet centre meets the terrain mesh. */
+export interface SurfaceHit {
+  /** Distance of the surface from the planet centre (planet radii). */
+  radius: number;
+  /** Terrain height in terrain units (as in MeshData.data.x; compare with the sea level). */
+  height: number;
+  /** Interpolated unit surface normal. */
+  nx: number;
+  ny: number;
+  nz: number;
+}
+
+/**
+ * Sample the terrain surface under direction d (any length, planet-local) into `out`. Shares the
+ * cached triangle grid with prop placement, so it is cheap enough for per-frame game queries
+ * (collision, terrain following). Returns false in the rare case the grid lookup misses.
+ */
+export function sampleSurface(m: SurfaceMesh, dx: number, dy: number, dz: number, out: SurfaceHit): boolean {
+  const loc = locatorFor(m);
+  if (!loc.locate(dx, dy, dz, false)) return false;
+  const { ia, ib, ic, wa, wb, wc } = loc;
+  const P = m.positions;
+  const N = m.normals;
+  const x = P[ia * 3] * wa + P[ib * 3] * wb + P[ic * 3] * wc;
+  const y = P[ia * 3 + 1] * wa + P[ib * 3 + 1] * wb + P[ic * 3 + 1] * wc;
+  const z = P[ia * 3 + 2] * wa + P[ib * 3 + 2] * wb + P[ic * 3 + 2] * wc;
+  const nx = N[ia * 3] * wa + N[ib * 3] * wb + N[ic * 3] * wc;
+  const ny = N[ia * 3 + 1] * wa + N[ib * 3 + 1] * wb + N[ic * 3 + 1] * wc;
+  const nz = N[ia * 3 + 2] * wa + N[ib * 3 + 2] * wb + N[ic * 3 + 2] * wc;
+  const nl = Math.hypot(nx, ny, nz) || 1;
+  out.radius = Math.hypot(x, y, z);
+  out.height = m.data[ia * 4] * wa + m.data[ib * 4] * wb + m.data[ic * 4] * wc;
+  out.nx = nx / nl;
+  out.ny = ny / nl;
+  out.nz = nz / nl;
+  return true;
 }
 
 /** Surface sample under a direction (unit vector), or null if the ray missed (never on a closed mesh). */

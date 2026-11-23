@@ -122,6 +122,9 @@ const ui = new UI(uiRoot, app, {
   async copyLink() {
     if (await copyText(shareUrl(app.params))) ui.toast('Link copied');
   },
+  fly() {
+    location.href = `./game.html#p=${encodeParams(app.params)}`;
+  },
   async screenshot() {
     const blob = await app.screenshot();
     if (!blob) return;

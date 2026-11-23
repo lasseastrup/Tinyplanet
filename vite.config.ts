@@ -4,6 +4,8 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 const PUBLIC_DIR = 'public';
+/** The planet editor, and the flight game played on its planets. */
+const PAGES = { main: 'index.html', game: 'game.html' };
 
 function listFiles(dir: string): string[] {
   const out: string[] = [];
@@ -25,7 +27,8 @@ function serviceWorker(): Plugin {
     apply: 'build',
     generateBundle(_options, bundle) {
       const hash = createHash('sha256');
-      const files = new Set<string>(['./']);
+      // './' is the editor (index.html); other pages are precached under their own names.
+      const files = new Set<string>(['./', ...Object.values(PAGES).filter((page) => page !== 'index.html')]);
 
       for (const [fileName, output] of Object.entries(bundle)) {
         if (fileName.endsWith('.map')) continue;
@@ -57,6 +60,11 @@ export default defineConfig({
   build: {
     target: 'es2022',
     chunkSizeWarningLimit: 1200,
+    rolldownOptions: {
+      input: PAGES,
+      // Three.js, the renderer and the app core are used by both pages: one clearly named chunk.
+      output: { codeSplitting: { groups: [{ name: 'shared', minShareCount: 2 }] } },
+    },
   },
   worker: {
     format: 'es',

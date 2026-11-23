@@ -31,18 +31,24 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Pages: network first so updates arrive quickly, cache as offline fallback.
+  // Pages: network first so updates arrive quickly, cache as offline fallback. Each page (the
+  // editor, the flight game) is cached under its own URL, without the query string.
   if (request.mode === 'navigate') {
+    const page = new URL(request.url);
+    page.search = '';
+    page.hash = '';
     event.respondWith(
       fetch(request)
         .then((response) => {
           if (cacheable(response)) {
             const copy = response.clone();
-            caches.open(CACHE).then((cache) => cache.put('./', copy));
+            caches.open(CACHE).then((cache) => cache.put(page.href, copy));
           }
           return response;
         })
-        .catch(() => caches.match('./', { ignoreSearch: true })),
+        .catch(() =>
+          caches.match(page.href).then((cached) => cached || caches.match('./', { ignoreSearch: true })),
+        ),
     );
     return;
   }
